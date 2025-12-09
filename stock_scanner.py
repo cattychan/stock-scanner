@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-股票掃描器 v3.3 - 極簡穩定版本
-使用最安全的方式提取 yfinance 數據
+股票掃描器 v3.4 - 超極簡版本
+直接使用 yfinance 最基本的操作
 """
 
 import yfinance as yf
@@ -10,18 +10,17 @@ import csv
 from datetime import datetime
 import os
 from pathlib import Path
-import pandas as pd
 
 OUTPUT_FOLDER = "stock_data"
 
-# 擴展的 190+ 支股票清單
+# 核心股票清單 - 只保留最常用的
 SCAN_TICKERS = [
     "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "JNJ", "V",
     "WMT", "JPM", "PG", "MA", "HD", "DIS", "MCD", "ADBE", "CRM", "NFLX",
     "INTC", "CSCO", "IBM", "ORCL", "MU", "PYPL", "SHOP", "ASML", "AMD",
-    "QCOM", "AVGO", "LRCX", "KLAC", "MCHP", "AMAT", "SNPS", "CDNS", "ADSK", "CPRT",
+    "QCOM", "AVGO", "LRCX", "KLAC", "MCHP", "AMAT", "SNPS", "CDNS", "ADSK",
     "NOW", "ADP", "EXC", "NEE", "DUK", "SO", "AEP", "PCG", "ED",
-    "WEC", "XEL", "CMS", "SRE", "PNW", "AWK", "NRG", "EVRG", "VRSN", "DDOG",
+    "WEC", "XEL", "CMS", "SRE", "PNW", "AWK", "NRG", "EVRG", "VRSN",
     "ROP", "ODFL", "PAYX", "DECK", "ULTA", "NVR", "KBH", "PHM", "DHI",
     "LEN", "SBNY", "UNM", "PGR", "HIG", "ALL", "BHF", "OC", "IEX", "LEG",
     "ATGE", "VEEV", "RBA", "CLOW", "FIX", "HY", "SMPL", "TPR", "BAC", "WFC",
@@ -42,111 +41,108 @@ SCAN_TICKERS = [
 ]
 
 def scan_single_stock(ticker):
-    """掃描單支股票"""
+    """掃描單支股票 - 極簡版本"""
     try:
         print(f"  掃描 {ticker}...", end=" ")
         
-        # 下載數據
-        data = yf.download(ticker, period="3mo", progress=False, auto_adjust=True)
+        # 直接下載，不進行任何複雜操作
+        data = yf.download(ticker, period="3mo", progress=False)
         
-        if data is None or data.empty or len(data) < 20:
+        # 檢查是否成功
+        if data is None or len(data) == 0:
             print("❌ 無數據")
             return None
         
-        # 使用 pandas 的安全方式提取數據
-        close_prices = data['Close'].astype(float).tolist()
-        volumes = data['Volume'].astype(float).tolist()
-        
-        if not close_prices or not volumes:
-            print("❌ 數據為空")
+        if len(data) < 20:
+            print("❌ 數據不足")
             return None
         
-        current_price = close_prices[-1]
-        prev_price = close_prices[-2] if len(close_prices) > 1 else current_price
-        current_volume = volumes[-1]
-        avg_volume = sum(volumes[-20:]) / min(20, len(volumes))
+        # 直接提取最後的值
+        last_close = data['Close'].iloc[-1]
+        prev_close = data['Close'].iloc[-2]
+        current_volume = data['Volume'].iloc[-1]
+        avg_volume_20 = data['Volume'].tail(20).mean()
         
         # 計算漲跌幅
-        change_pct = ((current_price - prev_price) / prev_price * 100) if prev_price != 0 else 0
+        change_pct = ((last_close - prev_close) / prev_close * 100)
         
-        # 計算技術指標
-        # SMA 20
-        sma_20 = sum(close_prices[-20:]) / 20 if len(close_prices) >= 20 else None
-        # SMA 50
-        sma_50 = sum(close_prices[-50:]) / 50 if len(close_prices) >= 50 else None
+        # 計算 SMA
+        sma_20 = data['Close'].tail(20).mean()
+        sma_50 = data['Close'].tail(50).mean() if len(data) >= 50 else None
         
-        # RSI 14
-        if len(close_prices) >= 15:
-            deltas = [close_prices[i] - close_prices[i-1] for i in range(1, len(close_prices))]
-            gains = [d if d > 0 else 0 for d in deltas]
-            losses = [-d if d < 0 else 0 for d in deltas]
-            avg_gain = sum(gains[-14:]) / 14
-            avg_loss = sum(losses[-14:]) / 14
-            if avg_loss == 0:
-                rsi = 100 if avg_gain > 0 else 50
-            else:
-                rs = avg_gain / avg_loss
-                rsi = 100 - (100 / (1 + rs))
+        # 計算 RSI
+        if len(data) >= 15:
+            delta = data['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).tail(14).mean()
+            loss = (-delta.where(delta < 0, 0)).tail(14).mean()
+            rs = gain / loss if loss != 0 else 0
+            rsi = 100 - (100 / (1 + rs)) if rs >= 0 else 50
         else:
             rsi = None
         
-        # MACD
-        if len(close_prices) >= 26:
-            ema_fast = sum(close_prices[-12:]) / 12
-            ema_slow = sum(close_prices[-26:]) / 26
-            macd = ema_fast - ema_slow
+        # 計算 MACD（簡化版）
+        if len(data) >= 26:
+            ema_12 = data['Close'].tail(12).mean()
+            ema_26 = data['Close'].tail(26).mean()
+            macd = ema_12 - ema_26
         else:
             macd = None
         
-        # 52 週高低
+        # 52週高低
         try:
-            year_data = yf.download(ticker, period="1y", progress=False, auto_adjust=True)
-            if year_data is not None and not year_data.empty:
-                high_52w = float(year_data['High'].astype(float).max())
-                low_52w = float(year_data['Low'].astype(float).min())
+            year_data = yf.download(ticker, period="1y", progress=False)
+            if year_data is not None and len(year_data) > 0:
+                high_52w = year_data['High'].max()
+                low_52w = year_data['Low'].min()
             else:
-                high_52w = current_price
-                low_52w = current_price
+                high_52w = last_close
+                low_52w = last_close
         except:
-            high_52w = current_price
-            low_52w = current_price
+            high_52w = last_close
+            low_52w = last_close
         
         # 生成交易信號
         signals = []
         
-        if sma_20 and sma_50 and sma_20 > sma_50:
+        # 信號 1：黃金交叉
+        if sma_20 > sma_50 if sma_50 is not None else False:
             signals.append("Golden_Cross")
         
+        # 信號 2：RSI 正常
         if rsi and 30 < rsi < 70:
             signals.append("RSI_Normal")
         
+        # 信號 3：RSI 反彈
         if rsi and 30 < rsi < 45:
             signals.append("RSI_Bounce")
         
-        if current_volume > avg_volume * 1.5:
+        # 信號 4：成交量放大
+        if current_volume > avg_volume_20 * 1.5:
             signals.append("Volume_Surge")
         
-        if current_price > high_52w * 0.95:
+        # 信號 5：接近 52 週高點
+        if last_close > high_52w * 0.95:
             signals.append("Near_52W_High")
         
-        if current_price > low_52w * 1.2:
+        # 信號 6：從低位反彈
+        if last_close > low_52w * 1.2:
             signals.append("From_Low_Rebound")
         
-        # 篩選條件：至少 2 個信號
+        # 篩選：至少 2 個信號
         if len(signals) >= 2:
             print(f"✅ {len(signals)} 信號")
             return {
                 'Ticker': ticker,
-                'Price': round(current_price, 2),
+                'Price': round(float(last_close), 2),
                 'Change_%': round(change_pct, 2),
-                'SMA_20': round(sma_20, 2) if sma_20 else "N/A",
-                'SMA_50': round(sma_50, 2) if sma_50 else "N/A",
+                'SMA_20': round(float(sma_20), 2),
+                'SMA_50': round(float(sma_50), 2) if sma_50 is not None else "N/A",
                 'RSI': round(rsi, 2) if rsi else "N/A",
                 'MACD': round(macd, 4) if macd else "N/A",
                 'Volume': int(current_volume),
-                'Volume_Avg_20': int(avg_volume),
-                '52W_High': round(high_52w, 2),
-                '52W_Low': round(low_52w, 2),
+                'Volume_Avg_20': int(avg_volume_20),
+                '52W_High': round(float(high_52w), 2),
+                '52W_Low': round(float(low_52w), 2),
                 'Signal_Count': len(signals),
                 'Signals': ", ".join(signals),
                 'Scan_Time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -156,12 +152,12 @@ def scan_single_stock(ticker):
             return None
         
     except Exception as e:
-        print(f"❌ {str(e)[:30]}")
+        print(f"❌ {str(e)[:20]}")
         return None
 
 def main():
     print("\n" + "="*70)
-    print("🚀 股票掃描器 v3.3 - 極簡穩定版本")
+    print("🚀 股票掃描器 v3.4 - 超極簡版本")
     print("="*70)
     print(f"掃描股票數量: {len(SCAN_TICKERS)}")
     print(f"掃描時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -180,7 +176,6 @@ def main():
     for idx, ticker in enumerate(SCAN_TICKERS, 1):
         print(f"[{idx:3d}/{len(SCAN_TICKERS)}] {ticker:6s}", end=" ")
         result = scan_single_stock(ticker)
-        
         if result:
             results.append(result)
     
@@ -210,8 +205,9 @@ def main():
             print("-" * 90)
             
             for r in results[:10]:
-                signals_str = r['Signals'][:37]
-                print(f"{r['Ticker']:<8} ${r['Price']:<9.2f} {r['Change_%']:>8.2f}% {str(r['RSI']):<7} {r['Signal_Count']:<6} {signals_str:<40}")
+                signals_str = r['Signals'][:37] if isinstance(r['Signals'], str) else ""
+                rsi_str = str(r['RSI']) if r['RSI'] != "N/A" else "N/A"
+                print(f"{r['Ticker']:<8} ${r['Price']:<9.2f} {r['Change_%']:>8.2f}% {rsi_str:<7} {r['Signal_Count']:<6} {signals_str:<40}")
             
             print(f"\n{'='*70}")
             if os.path.exists(output_file):
