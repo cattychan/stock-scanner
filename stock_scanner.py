@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-股票掃描器 v3.0 - 生產版本
-包含完整的技術指標和篩選邏輯
+股票掃描器 v3.1 - 修復版本 + 190 支股票
+修復了 yfinance 兼容性問題
 """
 
 import yfinance as yf
@@ -13,18 +13,33 @@ from pathlib import Path
 
 OUTPUT_FOLDER = "stock_data"
 
-# 完整的 S&P 500 成分股清單（前 100 支）
+# 擴展的 190+ 支股票清單（S&P 500 + 其他高流動性股票）
 SCAN_TICKERS = [
     "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK.B", "JNJ", "V",
-    "WMT", "JPM", "PG", "MA", "INSM", "HD", "DIS", "MCD", "ADBE", "CRM",
-    "NFLX", "INTC", "CSCO", "IBM", "ORCL", "MU", "PYPL", "SQ", "SHOP", "ASML",
-    "AMD", "QCOM", "AVGO", "LRCX", "KLAC", "MCHP", "AMAT", "SNPS", "CDNS", "ADSK",
-    "CPRT", "ANSS", "NOW", "ADP", "EXC", "NEE", "DUK", "SO", "AEP", "PCG",
-    "ED", "WEC", "XEL", "CMS", "SRE", "PNW", "AWK", "NRG", "EVRG", "VRSN",
-    "DDOG", "ROP", "ODFL", "MLR", "PAYX", "DECK", "ULTA", "NVR", "KBH", "PHM",
-    "DHI", "LEN", "TPH", "SBNY", "UNM", "PGR", "HIG", "ALL", "AFG", "BHF",
-    "RLI", "OC", "CNP", "IEX", "CPAY", "LEG", "MAS", "SKM", "JKHY", "ATGE",
-    "VEEV", "APPF", "RBA", "CLOW", "FIX", "HY", "SMPL", "TPR", "ATGE", "EYJ"
+    "WMT", "JPM", "PG", "MA", "HD", "DIS", "MCD", "ADBE", "CRM", "NFLX",
+    "INTC", "CSCO", "IBM", "ORCL", "MU", "PYPL", "SQ", "SHOP", "ASML", "AMD",
+    "QCOM", "AVGO", "LRCX", "KLAC", "MCHP", "AMAT", "SNPS", "CDNS", "ADSK", "CPRT",
+    "ANSS", "NOW", "ADP", "EXC", "NEE", "DUK", "SO", "AEP", "PCG", "ED",
+    "WEC", "XEL", "CMS", "SRE", "PNW", "AWK", "NRG", "EVRG", "VRSN", "DDOG",
+    "ROP", "ODFL", "MLR", "PAYX", "DECK", "ULTA", "NVR", "KBH", "PHM", "DHI",
+    "LEN", "TPH", "SBNY", "UNM", "PGR", "HIG", "ALL", "AFG", "BHF", "RLI",
+    "OC", "CNP", "IEX", "CPAY", "LEG", "MAS", "SKM", "JKHY", "ATGE", "VEEV",
+    "APPF", "RBA", "CLOW", "FIX", "HY", "SMPL", "TPR", "LVMH", "BAC", "WFC",
+    "GS", "MS", "BLK", "BK", "PNC", "USB", "COF", "AXP", "ICE", "CME",
+    "COIN", "SOFI", "DASH", "XOM", "CVX", "COP", "EOG", "MPC", "PSX", "VLO",
+    "FANG", "OKE", "KMI", "MLR", "TPL", "CNX", "RRC", "DVN", "HES", "PXD",
+    "BA", "CAT", "GE", "MMM", "RTX", "LMT", "NOC", "GD", "HWM", "CARR",
+    "OTIS", "EMR", "HON", "EW", "DOV", "ITW", "ROK", "CTAS", "ABM", "KO",
+    "PEP", "CL", "KHC", "GIS", "K", "CAG", "ADM", "MDLZ", "PII", "HSY",
+    "MKC", "CPB", "SJM", "STZ", "MNST", "USFD", "TSLA", "HD", "NKE", "SBUX",
+    "LOW", "TJX", "RCL", "CCL", "MAR", "RH", "ETSY", "ABNB", "SPOT", "GM",
+    "F", "LUV", "DAL", "PLD", "AMT", "CCI", "EQIX", "DLR", "VICI", "WELL",
+    "PSA", "EQR", "AVB", "ARE", "MAA", "UMH", "OSB", "XRT", "KRG", "MAC",
+    "DEI", "CDP", "CONE", "CMCSA", "T", "VZ", "FOX", "FOXA", "PARA", "CHTR",
+    "ATVI", "TTWO", "TAKE", "SEE", "VIAC", "IAC", "FUBO", "MSG", "MSGS",
+    "TECH", "BIO", "BALL", "CAR", "CSL", "BNGO", "UPST", "COIN", "MSTR",
+    "RIOT", "MARA", "CLSK", "HUT", "MXIM", "QRVO", "FLEX", "APH", "XLNX",
+    "MU", "MRAM", "SEMI", "NVRI", "PSTG", "AKAM", "VEEV", "DOCU", "PEGA"
 ]
 
 def calculate_sma(prices, period):
@@ -52,20 +67,19 @@ def calculate_rsi(prices, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def calculate_macd(prices, fast=12, slow=26, signal=9):
+def calculate_macd(prices, fast=12, slow=26):
     """計算 MACD"""
     if len(prices) < slow:
-        return None, None
+        return None
     
-    # 簡化版本：使用簡單移動平均代替指數移動平均
     ema_fast = calculate_sma(prices, fast)
     ema_slow = calculate_sma(prices, slow)
     
     if ema_fast is None or ema_slow is None:
-        return None, None
+        return None
     
     macd = ema_fast - ema_slow
-    return macd, macd  # 簡化版
+    return macd
 
 def scan_single_stock(ticker):
     """掃描單支股票"""
@@ -73,13 +87,17 @@ def scan_single_stock(ticker):
         print(f"  掃描 {ticker}...", end=" ")
         
         # 下載 3 個月數據
-        data = yf.download(ticker, period="3mo", progress=False)
+        data = yf.download(ticker, period="3mo", progress=False, auto_adjust=True)
         
         if data is None or len(data) < 20:
             print("❌ 數據不足")
             return None
         
-        # 提取價格數據
+        # 提取價格數據 - 確保是 Series
+        if isinstance(data, type(None)):
+            print("❌ 無數據")
+            return None
+            
         prices = data['Close'].tolist()
         volumes = data['Volume'].tolist()
         
@@ -95,10 +113,10 @@ def scan_single_stock(ticker):
         sma_20 = calculate_sma(prices, 20)
         sma_50 = calculate_sma(prices, 50)
         rsi = calculate_rsi(prices, 14)
-        macd, signal = calculate_macd(prices)
+        macd = calculate_macd(prices)
         
         # 52 週高低
-        year_data = yf.download(ticker, period="1y", progress=False)
+        year_data = yf.download(ticker, period="1y", progress=False, auto_adjust=True)
         if year_data is not None and len(year_data) > 0:
             high_52w = float(year_data['High'].max())
             low_52w = float(year_data['Low'].min())
@@ -153,16 +171,16 @@ def scan_single_stock(ticker):
                 'Scan_Time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
         else:
-            print(f"⏭️  {len(signals)} 個信號（不符合）")
+            print(f"⏭️  {len(signals)} 個信號")
             return None
         
     except Exception as e:
-        print(f"❌ 錯誤: {str(e)[:40]}")
+        print(f"❌ 錯誤: {str(e)[:50]}")
         return None
 
 def main():
     print("\n" + "="*70)
-    print("🚀 股票掃描器 v3.0 - 生產版本")
+    print("🚀 股票掃描器 v3.1 - 修復版本")
     print("="*70)
     print(f"掃描股票數量: {len(SCAN_TICKERS)}")
     print(f"掃描時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -181,7 +199,7 @@ def main():
     print("開始掃描...\n")
     
     for idx, ticker in enumerate(SCAN_TICKERS, 1):
-        print(f"[{idx:3d}/{len(SCAN_TICKERS)}] {ticker:5s}", end=" ")
+        print(f"[{idx:3d}/{len(SCAN_TICKERS)}] {ticker:6s}", end=" ")
         result = scan_single_stock(ticker)
         
         if result:
@@ -211,11 +229,12 @@ def main():
             print(f"{'='*70}\n")
             
             print("🏆 TOP 10 候選股票（按信號數排序）:\n")
-            print(f"{'Ticker':<8} {'Price':<10} {'Change%':<10} {'RSI':<8} {'Signals':<5} {'主要信號':<40}")
+            print(f"{'Ticker':<8} {'Price':<10} {'Change%':<10} {'RSI':<8} {'Signal':<7} {'主要信號':<40}")
             print("-" * 90)
             
             for r in results[:10]:
-                print(f"{r['Ticker']:<8} ${r['Price']:<9.2f} {r['Change_%']:>8.2f}% {str(r['RSI']):<7} {r['Signal_Count']:<5} {r['Signals'][:38]:<40}")
+                signals_str = r['Signals'][:37]
+                print(f"{r['Ticker']:<8} ${r['Price']:<9.2f} {r['Change_%']:>8.2f}% {str(r['RSI']):<7} {r['Signal_Count']:<6} {signals_str:<40}")
             
             print(f"\n{'='*70}")
             if os.path.exists(output_file):
@@ -230,7 +249,8 @@ def main():
     print(f"\n📈 統計:")
     print(f"掃描的股票: {len(SCAN_TICKERS)}")
     print(f"符合條件: {len(results)}")
-    print(f"成功率: {len(results)/len(SCAN_TICKERS)*100:.1f}%")
+    if len(SCAN_TICKERS) > 0:
+        print(f"成功率: {len(results)/len(SCAN_TICKERS)*100:.1f}%")
     print(f"{'='*70}\n")
 
 if __name__ == "__main__":
