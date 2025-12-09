@@ -23,13 +23,24 @@ jobs:
       run: |
         pip install yfinance pandas numpy
 
+    - name: Create stock_data directory
+      run: mkdir -p stock_data
+
     - name: Run Scanner
       run: python stock_scanner.py
+
+    - name: Check if CSV was generated
+      run: |
+        if [ -z "$(ls -A stock_data/*.csv 2>/dev/null)" ]; then
+          echo "Warning: No CSV files generated"
+          exit 0
+        fi
 
     - name: Commit and Push CSV
       run: |
         git config --global user.name 'GitHub Action'
         git config --global user.email 'action@github.com'
-        git add stock_data/*.csv
-        git commit -m "Auto update scan results"
+        git add -A stock_data/
+        git commit -m "Auto update scan results $(date +%Y-%m-%d)" || echo "No changes to commit"
         git push
+      continue-on-error: true
