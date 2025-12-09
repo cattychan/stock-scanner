@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-股票掃描器 v3.1 - 修復版本 + 190 支股票
-修復了 yfinance 兼容性問題
+股票掃描器 v3.2 - 完全重寫版本
+修復了 yfinance DataFrame 兼容性問題
 """
 
 import yfinance as yf
@@ -24,22 +24,21 @@ SCAN_TICKERS = [
     "ROP", "ODFL", "MLR", "PAYX", "DECK", "ULTA", "NVR", "KBH", "PHM", "DHI",
     "LEN", "TPH", "SBNY", "UNM", "PGR", "HIG", "ALL", "AFG", "BHF", "RLI",
     "OC", "CNP", "IEX", "CPAY", "LEG", "MAS", "SKM", "JKHY", "ATGE", "VEEV",
-    "APPF", "RBA", "CLOW", "FIX", "HY", "SMPL", "TPR", "LVMH", "BAC", "WFC",
+    "APPF", "RBA", "CLOW", "FIX", "HY", "SMPL", "TPR", "BAC", "WFC",
     "GS", "MS", "BLK", "BK", "PNC", "USB", "COF", "AXP", "ICE", "CME",
     "COIN", "SOFI", "DASH", "XOM", "CVX", "COP", "EOG", "MPC", "PSX", "VLO",
-    "FANG", "OKE", "KMI", "MLR", "TPL", "CNX", "RRC", "DVN", "HES", "PXD",
+    "FANG", "OKE", "KMI", "TPL", "CNX", "RRC", "DVN",
     "BA", "CAT", "GE", "MMM", "RTX", "LMT", "NOC", "GD", "HWM", "CARR",
     "OTIS", "EMR", "HON", "EW", "DOV", "ITW", "ROK", "CTAS", "ABM", "KO",
     "PEP", "CL", "KHC", "GIS", "K", "CAG", "ADM", "MDLZ", "PII", "HSY",
-    "MKC", "CPB", "SJM", "STZ", "MNST", "USFD", "TSLA", "HD", "NKE", "SBUX",
+    "MKC", "CPB", "SJM", "STZ", "MNST", "NKE", "SBUX",
     "LOW", "TJX", "RCL", "CCL", "MAR", "RH", "ETSY", "ABNB", "SPOT", "GM",
     "F", "LUV", "DAL", "PLD", "AMT", "CCI", "EQIX", "DLR", "VICI", "WELL",
-    "PSA", "EQR", "AVB", "ARE", "MAA", "UMH", "OSB", "XRT", "KRG", "MAC",
-    "DEI", "CDP", "CONE", "CMCSA", "T", "VZ", "FOX", "FOXA", "PARA", "CHTR",
-    "ATVI", "TTWO", "TAKE", "SEE", "VIAC", "IAC", "FUBO", "MSG", "MSGS",
-    "TECH", "BIO", "BALL", "CAR", "CSL", "BNGO", "UPST", "COIN", "MSTR",
-    "RIOT", "MARA", "CLSK", "HUT", "MXIM", "QRVO", "FLEX", "APH", "XLNX",
-    "MU", "MRAM", "SEMI", "NVRI", "PSTG", "AKAM", "VEEV", "DOCU", "PEGA"
+    "PSA", "EQR", "AVB", "ARE", "MAA", "UMH", "XRT", "KRG", "MAC",
+    "DEI", "CDP", "CMCSA", "T", "VZ", "FOX", "FOXA", "CHTR",
+    "TTWO", "SEE", "IAC", "FUBO", "MSGS",
+    "TECH", "BIO", "BALL", "CAR", "CSL", "BNGO", "UPST", "MSTR",
+    "RIOT", "MARA", "CLSK", "HUT", "QRVO", "FLEX", "APH", "MRAM", "SEMI", "NVRI", "PSTG", "AKAM", "DOCU", "PEGA"
 ]
 
 def calculate_sma(prices, period):
@@ -86,41 +85,57 @@ def scan_single_stock(ticker):
     try:
         print(f"  掃描 {ticker}...", end=" ")
         
-        # 下載 3 個月數據
+        # 下載 3 個月數據 - 使用安全的方式
         data = yf.download(ticker, period="3mo", progress=False, auto_adjust=True)
         
-        if data is None or len(data) < 20:
+        # 檢查數據是否為空或無效
+        if data is None or data.empty:
+            print("❌ 無數據")
+            return None
+        
+        if len(data) < 20:
             print("❌ 數據不足")
             return None
         
-        # 提取價格數據 - 確保是 Series
-        if isinstance(data, type(None)):
-            print("❌ 無數據")
+        # 安全地提取數據 - 使用 .values 而不是 .tolist()
+        try:
+            close_prices = data['Close'].values.tolist()
+            volumes = data['Volume'].values.tolist()
+        except (AttributeError, KeyError) as e:
+            print(f"❌ 提取數據失敗")
             return None
-            
-        prices = data['Close'].tolist()
-        volumes = data['Volume'].tolist()
         
-        current_price = float(prices[-1])
-        prev_price = float(prices[-2])
+        if not close_prices or not volumes:
+            print("❌ 數據為空")
+            return None
+        
+        current_price = float(close_prices[-1])
+        prev_price = float(close_prices[-2]) if len(close_prices) > 1 else current_price
         current_volume = int(volumes[-1])
         avg_volume = sum(volumes[-20:]) / 20
         
         # 計算漲跌幅
-        change_pct = ((current_price - prev_price) / prev_price * 100)
+        if prev_price != 0:
+            change_pct = ((current_price - prev_price) / prev_price * 100)
+        else:
+            change_pct = 0
         
         # 計算技術指標
-        sma_20 = calculate_sma(prices, 20)
-        sma_50 = calculate_sma(prices, 50)
-        rsi = calculate_rsi(prices, 14)
-        macd = calculate_macd(prices)
+        sma_20 = calculate_sma(close_prices, 20)
+        sma_50 = calculate_sma(close_prices, 50)
+        rsi = calculate_rsi(close_prices, 14)
+        macd = calculate_macd(close_prices)
         
         # 52 週高低
-        year_data = yf.download(ticker, period="1y", progress=False, auto_adjust=True)
-        if year_data is not None and len(year_data) > 0:
-            high_52w = float(year_data['High'].max())
-            low_52w = float(year_data['Low'].min())
-        else:
+        try:
+            year_data = yf.download(ticker, period="1y", progress=False, auto_adjust=True)
+            if year_data is not None and not year_data.empty:
+                high_52w = float(year_data['High'].values.max())
+                low_52w = float(year_data['Low'].values.min())
+            else:
+                high_52w = current_price
+                low_52w = current_price
+        except:
             high_52w = current_price
             low_52w = current_price
         
@@ -171,16 +186,16 @@ def scan_single_stock(ticker):
                 'Scan_Time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
         else:
-            print(f"⏭️  {len(signals)} 個信號")
+            print(f"⏭️  {len(signals)} 信號")
             return None
         
     except Exception as e:
-        print(f"❌ 錯誤: {str(e)[:50]}")
+        print(f"❌ {str(e)[:40]}")
         return None
 
 def main():
     print("\n" + "="*70)
-    print("🚀 股票掃描器 v3.1 - 修復版本")
+    print("🚀 股票掃描器 v3.2 - 完全重寫版本")
     print("="*70)
     print(f"掃描股票數量: {len(SCAN_TICKERS)}")
     print(f"掃描時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
