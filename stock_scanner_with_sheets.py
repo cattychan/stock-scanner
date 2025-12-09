@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-股票掃描器 with Google Sheets - 真正修復版
-所有 Series 都轉為純數值
+股票掃描器 - 調試版本
+顯示每支股票的信號數量
 """
 
 import yfinance as yf
@@ -28,44 +28,51 @@ SCAN_TICKERS = [
     "NOW", "ADP"
 ]
 
+# 🔧 降低門檻：改為至少 2 個信號
+MIN_SIGNALS = 2
+
 def safe_float(value):
     """安全地將 pandas Series/值轉為 float"""
     try:
         if pd.isna(value):
             return None
-        if hasattr(value, 'iloc'):  # 是 Series
+        if hasattr(value, 'iloc'):
             return float(value.iloc[0])
         return float(value)
     except:
         return None
 
 def scan_single_stock(ticker):
-    """掃描單支股票 - 完全修復版"""
+    """掃描單支股票 - 調試版"""
     try:
         data = yf.download(ticker, period="3mo", progress=False, auto_adjust=True)
         
-        if data is None or len(data) == 0 or len(data) < 50:
+        if data is None or len(data) == 0:
+            print(f"📛 數據為空")
+            return None
+            
+        if len(data) < 50:
+            print(f"📛 數據不足 ({len(data)} 天)")
             return None
         
-        # ============ 基礎數據（全部轉 float）============
+        # ============ 基礎數據 ============
         last_close = safe_float(data['Close'].iloc[-1])
         prev_close = safe_float(data['Close'].iloc[-2])
         current_volume = safe_float(data['Volume'].iloc[-1])
         avg_volume_20 = safe_float(data['Volume'].tail(20).mean())
         
         if not all([last_close, prev_close, current_volume, avg_volume_20]):
+            print(f"📛 基礎數據缺失")
             return None
         
         # ============ 移動平均線 ============
-        sma_20_series = data['Close'].rolling(window=20).mean()
-        sma_50_series = data['Close'].rolling(window=50).mean()
-        
-        sma_20 = safe_float(sma_20_series.iloc[-1])
-        sma_50 = safe_float(sma_50_series.iloc[-1])
-        prev_sma_20 = safe_float(sma_20_series.iloc[-2])
-        prev_sma_50 = safe_float(sma_50_series.iloc[-2])
+        sma_20 = safe_float(data['Close'].rolling(window=20).mean().iloc[-1])
+        sma_50 = safe_float(data['Close'].rolling(window=50).mean().iloc[-1])
+        prev_sma_20 = safe_float(data['Close'].rolling(window=20).mean().iloc[-2])
+        prev_sma_50 = safe_float(data['Close'].rolling(window=50).mean().iloc[-2])
         
         if not all([sma_20, sma_50, prev_sma_20, prev_sma_50]):
+            print(f"📛 SMA 數據缺失")
             return None
         
         # ============ RSI ============
@@ -104,7 +111,6 @@ def scan_single_stock(ticker):
         typical_price = (data['High'] + data['Low'] + data['Close']) / 3
         vwap_series = (typical_price * data['Volume']).cumsum() / data['Volume'].cumsum()
         current_vwap = safe_float(vwap_series.iloc[-1])
-        prev_vwap_close_compare = safe_float(data['Close'].iloc[-2])
         
         # ============ 52週高低 ============
         try:
@@ -122,7 +128,6 @@ def scan_single_stock(ticker):
             low_52w = last_close
             high_20d = last_close
         
-        # ============ 計算漲跌幅 ============
         change_pct = ((last_close - prev_close) / prev_close * 100)
         
         # ============ 生成交易信號 ============
@@ -140,14 +145,14 @@ def scan_single_stock(ticker):
         if current_rsi:
             if 30 < current_rsi < 50:
                 signals.append("RSI反彈")
-            if 50 < current_rsi < 70:
+            elif 50 < current_rsi < 70:
                 signals.append("RSI強勢")
         
         # 4. MACD
-        if current_macd_hist and prev_macd_hist:
+        if current_macd_hist is not None and prev_macd_hist is not None:
             if current_macd_hist > 0 and prev_macd_hist <= 0:
                 signals.append("MACD翻正")
-            if current_macd_hist > 0 and current_macd_hist > prev_macd_hist:
+            elif current_macd_hist > 0 and current_macd_hist > prev_macd_hist:
                 signals.append("MACD加速")
         
         # 5. 成交量激增
@@ -155,38 +160,38 @@ def scan_single_stock(ticker):
             signals.append("成交量激增")
         
         # 6. 突破 20 日高點
-        if high_20d and last_close > high_20d * 0.995:
-            signals.append("突破20日高")
+        if high_20d and last_close >= high_20d * 0.99:
+            signals.append("接近20日高")
         
         # 7. 接近 52 週高點
-        if high_52w and last_close > high_52w * 0.95:
+        if high_52w and last_close >= high_52w * 0.90:
             signals.append("接近52週高")
         
         # 8. 從低點反彈
-        if low_52w and last_close > low_52w * 1.3:
+        if low_52w and last_close >= low_52w * 1.2:
             signals.append("從低點反彈")
         
         # 9. 布林帶
         if current_upper and last_close > current_upper:
             signals.append("突破布林上軌")
         
-        if current_lower and prev_close < current_lower and last_close > current_lower:
+        if current_lower and prev_close < current_lower and last_close >= current_lower:
             signals.append("布林下軌反彈")
         
         if current_upper and current_lower:
             position_in_bb = (last_close - current_lower) / (current_upper - current_lower)
-            if 0.6 < position_in_bb < 1.0:
+            if 0.5 < position_in_bb <= 1.0:
                 signals.append("布林帶強勢區")
         
         # 10. VWAP
-        if current_vwap:
-            if last_close > current_vwap:
-                signals.append("站上VWAP")
-            if prev_vwap_close_compare and prev_vwap_close_compare < current_vwap and last_close > current_vwap:
-                signals.append("突破VWAP")
+        if current_vwap and last_close > current_vwap:
+            signals.append("站上VWAP")
         
-        # ============ 篩選：至少 3 個信號 ============
-        if len(signals) >= 3:
+        # 🔍 顯示信號數量（調試用）
+        print(f"✓ {len(signals)} 信號: {', '.join(signals[:3])}")
+        
+        # ============ 篩選：至少 MIN_SIGNALS 個信號 ============
+        if len(signals) >= MIN_SIGNALS:
             return {
                 'Ticker': ticker,
                 'Price': round(last_close, 2),
@@ -212,7 +217,7 @@ def scan_single_stock(ticker):
         return None
         
     except Exception as e:
-        print(f"❌ {ticker} - {str(e)[:50]}")
+        print(f"❌ 錯誤: {str(e)[:50]}")
         return None
 
 def upload_to_google_sheets(results):
@@ -250,11 +255,11 @@ def upload_to_google_sheets(results):
 
 def main():
     print("\n" + "="*70)
-    print("🚀 股票掃描器 - 增強版（至少3個信號）")
+    print(f"🚀 股票掃描器 - 調試版（至少{MIN_SIGNALS}個信號）")
     print("="*70)
     print(f"掃描時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"技術指標: SMA, RSI, MACD, 布林帶, VWAP, 突破新高")
-    print(f"篩選條件: ≥ 3 個技術信號")
+    print(f"篩選條件: ≥ {MIN_SIGNALS} 個技術信號")
     print("="*70 + "\n")
     
     Path(OUTPUT_FOLDER).mkdir(exist_ok=True)
@@ -265,9 +270,6 @@ def main():
         result = scan_single_stock(ticker)
         if result:
             results.append(result)
-            print(f"✅ {result['Signal_Count']} 信號")
-        else:
-            print("⏭️")
     
     print(f"\n{'='*70}")
     
@@ -286,17 +288,14 @@ def main():
         
         upload_to_google_sheets(results)
         
-        print(f"\n📊 TOP 10 超級機會股:\n")
-        print(f"{'排名':<4} {'代碼':<8} {'價格':<10} {'漲跌%':<8} {'RSI':<8} {'信號數':<8} {'信號列表':<50}")
-        print("-" * 100)
+        print(f"\n📊 TOP 10:\n")
         for i, r in enumerate(results[:10], 1):
             rsi_str = str(r['RSI']) if r['RSI'] != "N/A" else "N/A"
-            signals_str = r['Signals'][:45] + "..." if len(r['Signals']) > 45 else r['Signals']
-            print(f"{i:<4} {r['Ticker']:<8} ${r['Price']:<9.2f} {r['Change_%']:>6.2f}% {rsi_str:<8} {r['Signal_Count']:<8} {signals_str:<50}")
+            print(f"{i}. {r['Ticker']}: ${r['Price']} | RSI {rsi_str} | {r['Signal_Count']} 信號")
         
-        print(f"\n✅ 找到 {len(results)} 支符合條件的股票（≥ 3 信號）")
+        print(f"\n✅ 找到 {len(results)} 支符合條件的股票")
     else:
-        print("⚠️ 沒有找到符合條件的股票（至少需要 3 個信號）")
+        print("⚠️ 沒有找到符合條件的股票")
     
     print(f"{'='*70}\n")
 
