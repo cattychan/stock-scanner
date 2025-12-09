@@ -31,8 +31,9 @@ jobs:
 
     - name: Run Scanner and Upload to Google Sheets
       env:
-        GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-      run: python stock_scanner_with_sheets.py
+    GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+    GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+  run: python stock_scanner_with_sheets.py
       
     - name: List generated files
       run: ls -la stock_data/
