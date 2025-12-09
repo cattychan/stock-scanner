@@ -9,18 +9,21 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: '3.9'
 
     - name: Install dependencies
       run: |
+        pip install --upgrade pip
         pip install yfinance pandas numpy
 
     - name: Create stock_data directory
@@ -28,19 +31,14 @@ jobs:
 
     - name: Run Scanner
       run: python stock_scanner.py
-
-    - name: Check if CSV was generated
-      run: |
-        if [ -z "$(ls -A stock_data/*.csv 2>/dev/null)" ]; then
-          echo "Warning: No CSV files generated"
-          exit 0
-        fi
+      
+    - name: List generated files
+      run: ls -la stock_data/
 
     - name: Commit and Push CSV
       run: |
-        git config --global user.name 'GitHub Action'
-        git config --global user.email 'action@github.com'
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
         git add -A stock_data/
-        git commit -m "Auto update scan results $(date +%Y-%m-%d)" || echo "No changes to commit"
+        git commit -m "Auto: Stock scan results $(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
         git push
-      continue-on-error: true
