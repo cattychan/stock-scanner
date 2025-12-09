@@ -2,11 +2,12 @@
 # -*- coding: utf-8 -*-
 
 """
-股票掃描器 with Google Sheets - 終極穩定版
-基於 v34 的穩定架構 + 增強功能
+股票掃描器 - 終極修復版
+完全避開 pandas Series 判斷問題
 """
 
 import yfinance as yf
+import pandas as pd
 import csv
 from datetime import datetime
 import os
@@ -14,8 +15,11 @@ from pathlib import Path
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import warnings
+warnings.filterwarnings('ignore')
 
 OUTPUT_FOLDER = "stock_data"
+MIN_SIGNALS = 2
 
 SCAN_TICKERS = [
     "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "JNJ", "V",
@@ -26,176 +30,159 @@ SCAN_TICKERS = [
 ]
 
 def scan_single_stock(ticker):
-    """掃描單支股票 - 穩定增強版"""
+    """掃描單支股票 - 終極修復版"""
     try:
         # 下載數據
-        data = yf.download(ticker, period="3mo", progress=False)
+        data = yf.download(ticker, period="3mo", progress=False, auto_adjust=True)
         
-        if data is None or len(data) == 0 or len(data) < 50:
+        if data.empty or len(data) < 50:
+            print("⏭️ 數據不足")
             return None
         
-        # ============ 直接提取值（v34 方式）============
-        last_close = data['Close'].iloc[-1]
-        prev_close = data['Close'].iloc[-2]
-        current_volume = data['Volume'].iloc[-1]
-        avg_volume_20 = data['Volume'].tail(20).mean()
+        # ===== 提取數據並立即轉為 Python float =====
+        last_close = float(data['Close'].iloc[-1])
+        prev_close = float(data['Close'].iloc[-2])
+        current_volume = float(data['Volume'].iloc[-1])
         
-        # ============ 計算指標 ============
-        change_pct = ((last_close - prev_close) / prev_close * 100)
+        # 計算平均成交量
+        vol_series = data['Volume'].tail(20)
+        avg_volume_20 = float(vol_series.mean())
         
-        # SMA
-        sma_20 = data['Close'].tail(20).mean()
-        sma_50 = data['Close'].tail(50).mean() if len(data) >= 50 else None
+        # 計算 SMA
+        close_series = data['Close']
+        sma_20 = float(close_series.rolling(window=20).mean().iloc[-1])
+        sma_50 = float(close_series.rolling(window=50).mean().iloc[-1])
+        prev_sma_20 = float(close_series.rolling(window=20).mean().iloc[-2])
+        prev_sma_50 = float(close_series.rolling(window=50).mean().iloc[-2])
         
-        # 上一期 SMA (用於黃金交叉判斷)
-        prev_sma_20 = data['Close'].iloc[:-1].tail(20).mean()
-        prev_sma_50 = data['Close'].iloc[:-1].tail(50).mean() if len(data) >= 50 else None
+        # 計算 RSI
+        delta = close_series.diff()
+        gain = delta.where(delta > 0, 0).rolling(window=14).mean()
+        loss = -delta.where(delta < 0, 0).rolling(window=14).mean()
+        rs = gain / loss
+        rsi_series = 100 - (100 / (1 + rs))
+        current_rsi = float(rsi_series.iloc[-1])
         
-        # RSI
-        rsi = None
-        if len(data) >= 15:
-            delta = data['Close'].diff()
-            gain = (delta.where(delta > 0, 0)).tail(14).mean()
-            loss = (-delta.where(delta < 0, 0)).tail(14).mean()
-            if loss != 0:
-                rs = gain / loss
-                rsi = 100 - (100 / (1 + rs)) if rs >= 0 else 50
+        # 計算 MACD
+        ema_12 = close_series.ewm(span=12, adjust=False).mean()
+        ema_26 = close_series.ewm(span=26, adjust=False).mean()
+        macd_line = ema_12 - ema_26
+        signal_line = macd_line.ewm(span=9, adjust=False).mean()
+        macd_hist = macd_line - signal_line
+        current_macd = float(macd_hist.iloc[-1])
+        prev_macd = float(macd_hist.iloc[-2])
         
-        # MACD (簡化版)
-        macd = None
-        prev_macd = None
-        if len(data) >= 26:
-            ema_12 = data['Close'].ewm(span=12, adjust=False).mean()
-            ema_26 = data['Close'].ewm(span=26, adjust=False).mean()
-            macd_line = ema_12 - ema_26
-            macd = macd_line.iloc[-1]
-            prev_macd = macd_line.iloc[-2]
+        # 計算布林帶
+        sma_bb = close_series.rolling(window=20).mean()
+        std_bb = close_series.rolling(window=20).std()
+        upper_band = sma_bb + (std_bb * 2)
+        lower_band = sma_bb - (std_bb * 2)
+        bb_upper = float(upper_band.iloc[-1])
+        bb_lower = float(lower_band.iloc[-1])
+        bb_middle = float(sma_bb.iloc[-1])
+        bb_width = ((bb_upper - bb_lower) / bb_middle * 100)
         
-        # 布林帶
-        bb_upper = None
-        bb_lower = None
-        bb_width = None
-        if len(data) >= 20:
-            sma_bb = data['Close'].rolling(window=20).mean()
-            std_bb = data['Close'].rolling(window=20).std()
-            bb_upper = (sma_bb + (std_bb * 2)).iloc[-1]
-            bb_lower = (sma_bb - (std_bb * 2)).iloc[-1]
-            bb_middle = sma_bb.iloc[-1]
-            if bb_middle > 0:
-                bb_width = ((bb_upper - bb_lower) / bb_middle * 100)
+        # 計算 VWAP
+        typical_price = (data['High'] + data['Low'] + data['Close']) / 3
+        vwap = (typical_price * data['Volume']).cumsum() / data['Volume'].cumsum()
+        current_vwap = float(vwap.iloc[-1])
         
-        # VWAP
-        vwap = None
-        if len(data) >= 20:
-            typical_price = (data['High'] + data['Low'] + data['Close']) / 3
-            vwap_series = (typical_price * data['Volume']).cumsum() / data['Volume'].cumsum()
-            vwap = vwap_series.iloc[-1]
-        
-        # 52週高低
-        try:
-            year_data = yf.download(ticker, period="1y", progress=False)
-            if year_data is not None and len(year_data) > 0:
-                high_52w = year_data['High'].max()
-                low_52w = year_data['Low'].min()
-                high_20d = data['High'].tail(20).max()
-            else:
-                high_52w = last_close
-                low_52w = last_close
-                high_20d = last_close
-        except:
+        # 獲取 52 週數據
+        year_data = yf.download(ticker, period="1y", progress=False, auto_adjust=True)
+        if not year_data.empty:
+            high_52w = float(year_data['High'].max())
+            low_52w = float(year_data['Low'].min())
+            high_20d = float(data['High'].tail(20).max())
+        else:
             high_52w = last_close
             low_52w = last_close
             high_20d = last_close
         
-        # ============ 生成交易信號 ============
+        change_pct = ((last_close - prev_close) / prev_close * 100)
+        
+        # ===== 生成信號（全部使用 Python float，避免 Series 判斷）=====
         signals = []
         
         # 1. 黃金交叉
-        if sma_50 and prev_sma_50 and sma_20 > sma_50 and prev_sma_20 <= prev_sma_50:
+        if sma_20 > sma_50 and prev_sma_20 <= prev_sma_50:
             signals.append("黃金交叉")
         
         # 2. 均線多頭
-        if sma_50 and last_close > sma_20 > sma_50:
+        if last_close > sma_20 and sma_20 > sma_50:
             signals.append("均線多頭")
         
-        # 3. RSI 反彈
-        if rsi and 30 < rsi < 50:
+        # 3. RSI
+        if 30 < current_rsi < 50:
             signals.append("RSI反彈")
-        
-        # 4. RSI 強勢
-        if rsi and 50 < rsi < 70:
+        elif 50 < current_rsi < 70:
             signals.append("RSI強勢")
         
-        # 5. MACD 翻正
-        if macd and prev_macd and macd > 0 and prev_macd <= 0:
+        # 4. MACD
+        if current_macd > 0 and prev_macd <= 0:
             signals.append("MACD翻正")
-        
-        # 6. MACD 加速
-        if macd and prev_macd and macd > 0 and macd > prev_macd:
+        elif current_macd > 0 and current_macd > prev_macd:
             signals.append("MACD加速")
         
-        # 7. 成交量激增
+        # 5. 成交量
         if current_volume > avg_volume_20 * 1.5:
             signals.append("成交量激增")
         
-        # 8. 突破/接近 20日高
-        if last_close >= high_20d * 0.98:
+        # 6. 突破
+        if last_close >= high_20d * 0.99:
             signals.append("接近20日高")
         
-        # 9. 接近 52週高
         if last_close >= high_52w * 0.90:
             signals.append("接近52週高")
         
-        # 10. 從低點反彈
         if last_close >= low_52w * 1.2:
             signals.append("從低點反彈")
         
-        # 11. 突破布林上軌
-        if bb_upper and last_close > bb_upper:
+        # 7. 布林帶
+        if last_close > bb_upper:
             signals.append("突破布林上軌")
         
-        # 12. 布林下軌反彈
-        if bb_lower and prev_close < bb_lower and last_close >= bb_lower:
+        if prev_close < bb_lower and last_close >= bb_lower:
             signals.append("布林下軌反彈")
         
-        # 13. 布林帶強勢區
-        if bb_upper and bb_lower:
-            position = (last_close - bb_lower) / (bb_upper - bb_lower)
-            if 0.5 < position <= 1.0:
-                signals.append("布林帶強勢區")
+        position_bb = (last_close - bb_lower) / (bb_upper - bb_lower)
+        if 0.5 < position_bb <= 1.0:
+            signals.append("布林帶強勢")
         
-        # 14. 站上 VWAP
-        if vwap and last_close > vwap:
+        # 8. VWAP
+        if last_close > current_vwap:
             signals.append("站上VWAP")
         
-        # ============ 篩選：至少 2 個信號 ============
-        if len(signals) >= 2:
+        # 顯示信號
+        print(f"✓ {len(signals)} 信號")
+        
+        # 篩選
+        if len(signals) >= MIN_SIGNALS:
             return {
                 'Ticker': ticker,
-                'Price': round(float(last_close), 2),
-                'Change_%': round(float(change_pct), 2),
-                'SMA_20': round(float(sma_20), 2),
-                'SMA_50': round(float(sma_50), 2) if sma_50 is not None else "N/A",
-                'RSI': round(float(rsi), 2) if rsi else "N/A",
-                'MACD': round(float(macd), 4) if macd else "N/A",
-                'BB_Upper': round(float(bb_upper), 2) if bb_upper else "N/A",
-                'BB_Lower': round(float(bb_lower), 2) if bb_lower else "N/A",
-                'BB_Width_%': round(float(bb_width), 2) if bb_width else "N/A",
-                'VWAP': round(float(vwap), 2) if vwap else "N/A",
+                'Price': round(last_close, 2),
+                'Change_%': round(change_pct, 2),
+                'SMA_20': round(sma_20, 2),
+                'SMA_50': round(sma_50, 2),
+                'RSI': round(current_rsi, 2),
+                'MACD': round(current_macd, 4),
+                'BB_Upper': round(bb_upper, 2),
+                'BB_Lower': round(bb_lower, 2),
+                'BB_Width': round(bb_width, 2),
+                'VWAP': round(current_vwap, 2),
                 'Volume': int(current_volume),
-                'Avg_Vol_20': int(avg_volume_20),
-                'Vol_Ratio': round(float(current_volume / avg_volume_20), 2),
-                '52W_High': round(float(high_52w), 2),
-                '52W_Low': round(float(low_52w), 2),
-                '20D_High': round(float(high_20d), 2),
-                'Signal_Count': len(signals),
-                'Signals': ", ".join(signals),
-                'Scan_Time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                'Avg_Vol': int(avg_volume_20),
+                'Vol_Ratio': round(current_volume / avg_volume_20, 2),
+                '52W_High': round(high_52w, 2),
+                '52W_Low': round(low_52w, 2),
+                '20D_High': round(high_20d, 2),
+                'Signals': len(signals),
+                'Signal_List': ", ".join(signals),
+                'Time': datetime.now().strftime('%Y-%m-%d %H:%M')
             }
         return None
         
     except Exception as e:
-        print(f"❌ {ticker} - {str(e)[:30]}")
+        print(f"❌ {str(e)[:40]}")
         return None
 
 def upload_to_google_sheets(results):
@@ -224,40 +211,36 @@ def upload_to_google_sheets(results):
         
         sheet.update(rows, value_input_option='USER_ENTERED')
         
-        print(f"✅ 成功上傳 {len(results)} 筆到 Google Sheets")
+        print(f"✅ 上傳 {len(results)} 筆到 Google Sheets")
         return True
         
     except Exception as e:
-        print(f"❌ 上傳失敗：{str(e)}")
+        print(f"❌ 上傳失敗：{str(e)[:40]}")
         return False
 
 def main():
     print("\n" + "="*70)
-    print("🚀 股票掃描器 - 增強穩定版（≥ 2 信號）")
+    print(f"🚀 股票掃描器（≥ {MIN_SIGNALS} 信號）")
     print("="*70)
-    print(f"掃描時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"技術指標: SMA, RSI, MACD, 布林帶, VWAP, 突破")
+    print(f"時間: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print("="*70 + "\n")
     
     Path(OUTPUT_FOLDER).mkdir(exist_ok=True)
     
     results = []
     for idx, ticker in enumerate(SCAN_TICKERS, 1):
-        print(f"[{idx}/{len(SCAN_TICKERS)}] {ticker}...", end=" ")
+        print(f"[{idx}/{len(SCAN_TICKERS)}] {ticker}... ", end="")
         result = scan_single_stock(ticker)
         if result:
             results.append(result)
-            print(f"✅ {result['Signal_Count']} 信號")
-        else:
-            print("⏭️")
     
     print(f"\n{'='*70}")
     
     if results:
-        results.sort(key=lambda x: x['Signal_Count'], reverse=True)
+        results.sort(key=lambda x: x['Signals'], reverse=True)
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        output_file = os.path.join(OUTPUT_FOLDER, f"scanner_results_{timestamp}.csv")
+        output_file = os.path.join(OUTPUT_FOLDER, f"results_{timestamp}.csv")
         
         with open(output_file, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.DictWriter(f, fieldnames=list(results[0].keys()))
@@ -270,7 +253,7 @@ def main():
         
         print(f"\n📊 TOP 10:\n")
         for i, r in enumerate(results[:10], 1):
-            print(f"{i}. {r['Ticker']}: ${r['Price']} | {r['Signal_Count']} 信號 | {r['Signals'][:50]}")
+            print(f"{i}. {r['Ticker']}: ${r['Price']} | RSI {r['RSI']} | {r['Signals']} 信號")
         
         print(f"\n✅ 找到 {len(results)} 支股票")
     else:
