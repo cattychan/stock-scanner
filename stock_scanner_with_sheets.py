@@ -1,127 +1,132 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+"""
+股票掃描器 with Google Sheets - 修復版
+結合 v3.4 的穩定掃描 + Google Sheets 上傳
+"""
+
 import yfinance as yf
-import pandas as pd
-import numpy as np
+import csv
 from datetime import datetime
 import os
+from pathlib import Path
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# ==================== 配置 ====================
-SCAN_TICKERS = [
-    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA",
-    "AVGO", "QCOM", "AMD", "ADBE", "CRM", "NFLX", "INTC"
-    # ... 您可以加入更多股票代碼
-]
-
-SMA_PERIOD_SHORT = 20
-SMA_PERIOD_LONG = 50
-RSI_PERIOD = 14
-RSI_OVERBOUGHT = 70
-RSI_OVERSOLD = 30
-VOLUME_MULTIPLIER = 1.2
 OUTPUT_FOLDER = "stock_data"
 
-# ==================== 技術指標計算 ====================
-def calculate_sma(data, period):
-    return data['Close'].rolling(window=period).mean()
+# 核心股票清單
+SCAN_TICKERS = [
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "JNJ", "V",
+    "WMT", "JPM", "PG", "MA", "HD", "DIS", "MCD", "ADBE", "CRM", "NFLX",
+    "INTC", "CSCO", "IBM", "ORCL", "MU", "PYPL", "SHOP", "ASML", "AMD",
+    "QCOM", "AVGO"
+]
 
-def calculate_rsi(data, period=14):
-    delta = data['Close'].diff()
-    gain = delta.where(delta > 0, 0).rolling(window=period).mean()
-    loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
-    rs = gain / loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
-
-def calculate_macd(data):
-    ema_fast = data['Close'].ewm(span=12, adjust=False).mean()
-    ema_slow = data['Close'].ewm(span=26, adjust=False).mean()
-    macd_line = ema_fast - ema_slow
-    signal_line = macd_line.ewm(span=9, adjust=False).mean()
-    histogram = macd_line - signal_line
-    return macd_line, signal_line, histogram
-
-# ==================== 掃描單一股票 ====================
 def scan_single_stock(ticker):
+    """掃描單支股票 - 穩定版本"""
     try:
-        data = yf.download(ticker, period='3mo', progress=False)
-        if data.empty or len(data) < 30:
+        # 直接下載
+        data = yf.download(ticker, period="3mo", progress=False)
+        
+        # 檢查數據
+        if data is None or len(data) == 0 or len(data) < 20:
             return None
         
-        data = data.sort_index()
-        sma20 = calculate_sma(data, SMA_PERIOD_SHORT)
-        sma50 = calculate_sma(data, SMA_PERIOD_LONG)
-        rsi = calculate_rsi(data, RSI_PERIOD)
-        macd_line, signal_line, histogram = calculate_macd(data)
-        
-        current_price = float(data['Close'].iloc[-1])
+        # 直接提取值（已修復 Series 問題）
+        last_close = float(data['Close'].iloc[-1])
+        prev_close = float(data['Close'].iloc[-2])
         current_volume = float(data['Volume'].iloc[-1])
-        prev_price = float(data['Close'].iloc[-2])
+        avg_volume_20 = float(data['Volume'].tail(20).mean())
         
-        current_sma20 = float(sma20.iloc[-1]) if not pd.isna(sma20.iloc[-1]) else None
-        current_sma50 = float(sma50.iloc[-1]) if not pd.isna(sma50.iloc[-1]) else None
-        prev_sma20 = float(sma20.iloc[-2]) if not pd.isna(sma20.iloc[-2]) else None
-        prev_sma50 = float(sma50.iloc[-2]) if not pd.isna(sma50.iloc[-2]) else None
+        # 計算指標
+        change_pct = ((last_close - prev_close) / prev_close * 100)
+        sma_20 = float(data['Close'].tail(20).mean())
+        sma_50 = float(data['Close'].tail(50).mean()) if len(data) >= 50 else None
         
-        current_rsi = float(rsi.iloc[-1]) if not pd.isna(rsi.iloc[-1]) else None
-        current_macd_hist = float(histogram.iloc[-1]) if not pd.isna(histogram.iloc[-1]) else None
-        prev_macd_hist = float(histogram.iloc[-2]) if not pd.isna(histogram.iloc[-2]) else None
+        # RSI
+        rsi = None
+        if len(data) >= 15:
+            delta = data['Close'].diff()
+            gain = float((delta.where(delta > 0, 0)).tail(14).mean())
+            loss = float((-delta.where(delta < 0, 0)).tail(14).mean())
+            if loss != 0:
+                rs = gain / loss
+                rsi = 100 - (100 / (1 + rs)) if rs >= 0 else 50
         
-        avg_volume = float(data['Volume'].tail(20).mean())
-        price_change_pct = ((current_price - prev_price) / prev_price * 100) if prev_price != 0 else 0
+        # MACD（簡化）
+        macd = None
+        if len(data) >= 26:
+            ema_12 = float(data['Close'].tail(12).mean())
+            ema_26 = float(data['Close'].tail(26).mean())
+            macd = ema_12 - ema_26
         
-        data_52w = yf.download(ticker, period='1y', progress=False)
-        high_52w = float(data_52w['High'].max())
-        low_52w = float(data_52w['Low'].min())
+        # 52週高低
+        try:
+            year_data = yf.download(ticker, period="1y", progress=False)
+            if year_data is not None and len(year_data) > 0:
+                high_52w = float(year_data['High'].max())
+                low_52w = float(year_data['Low'].min())
+            else:
+                high_52w = last_close
+                low_52w = last_close
+        except:
+            high_52w = last_close
+            low_52w = last_close
         
+        # 生成信號
         signals = []
-        if current_sma20 and current_sma50 and prev_sma20 and prev_sma50:
-            if current_sma20 > current_sma50 and prev_sma20 <= prev_sma50:
-                signals.append("黃金交叉")
         
-        if current_rsi:
-            if current_rsi < RSI_OVERSOLD:
-                signals.append("RSI超賣")
-            elif current_rsi > RSI_OVERBOUGHT:
-                signals.append("RSI超買")
+        # 黃金交叉
+        if sma_50 is not None and sma_20 > sma_50:
+            signals.append("Golden_Cross")
         
-        if current_macd_hist and prev_macd_hist:
-            if current_macd_hist > 0 and prev_macd_hist <= 0:
-                signals.append("MACD翻正")
+        # RSI
+        if rsi and 30 < rsi < 70:
+            signals.append("RSI_Normal")
+        if rsi and 30 < rsi < 45:
+            signals.append("RSI_Bounce")
         
-        if current_price >= high_52w * 0.98:
-            signals.append("接近52週高點")
+        # 成交量
+        if current_volume > avg_volume_20 * 1.5:
+            signals.append("Volume_Surge")
         
-        if current_volume > avg_volume * VOLUME_MULTIPLIER:
-            signals.append("成交量激增")
+        # 52週高點
+        if last_close > high_52w * 0.95:
+            signals.append("Near_52W_High")
         
-        if len(signals) >= 1:
+        # 從低位反彈
+        if last_close > low_52w * 1.2:
+            signals.append("From_Low_Rebound")
+        
+        # 至少 2 個信號
+        if len(signals) >= 2:
             return {
-                "Ticker": ticker,
-                "CurrentPrice": round(current_price, 2),
-                "Change%": round(price_change_pct, 2),
-                "SMA20": round(current_sma20, 2) if current_sma20 else "N/A",
-                "SMA50": round(current_sma50, 2) if current_sma50 else "N/A",
-                "RSI": round(current_rsi, 2) if current_rsi else "N/A",
-                "MACDHist": round(current_macd_hist, 4) if current_macd_hist else "N/A",
-                "VolumeSurge": "Yes" if "成交量激增" in signals else "No",
-                "52WHigh": round(high_52w, 2),
-                "52WLow": round(low_52w, 2),
-                "Signals": ", ".join(signals),
-                "SignalCount": len(signals),
-                "ScanTime": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                'Ticker': ticker,
+                'Price': round(last_close, 2),
+                'Change_%': round(change_pct, 2),
+                'SMA_20': round(sma_20, 2),
+                'SMA_50': round(sma_50, 2) if sma_50 is not None else "N/A",
+                'RSI': round(rsi, 2) if rsi else "N/A",
+                'MACD': round(macd, 4) if macd else "N/A",
+                'Volume': int(current_volume),
+                'Volume_Avg_20': int(avg_volume_20),
+                '52W_High': round(high_52w, 2),
+                '52W_Low': round(low_52w, 2),
+                'Signal_Count': len(signals),
+                'Signals': ", ".join(signals),
+                'Scan_Time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
         return None
+        
     except Exception as e:
         print(f"❌ {ticker} - {str(e)}")
         return None
 
-# ==================== 上傳到 Google Sheets ====================
-def upload_to_google_sheets(df):
+def upload_to_google_sheets(results):
+    """上傳到 Google Sheets"""
     try:
         # 讀取環境變數
         creds_json = os.environ.get('GOOGLE_CREDENTIALS')
@@ -131,39 +136,46 @@ def upload_to_google_sheets(df):
             print("⚠️ 缺少 Google Sheets 憑證或 Sheet ID")
             return False
         
-        # 解析 JSON 憑證
+        # 解析憑證
         creds_dict = json.loads(creds_json)
         scope = ['https://spreadsheets.google.com/feeds',
                  'https://www.googleapis.com/auth/drive']
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         
-        # 打開 Google Sheet
+        # 打開 Sheet
         sheet = client.open_by_key(sheet_id).sheet1
         
-        # 清空舊數據（保留標題）
+        # 清空並寫入
         sheet.clear()
         
-        # 寫入新數據
-        sheet.update([df.columns.values.tolist()] + df.values.tolist())
+        # 準備數據
+        headers = list(results[0].keys())
+        rows = [headers]
+        for r in results:
+            rows.append([r[h] for h in headers])
         
-        print(f"✅ 成功上傳 {len(df)} 筆數據到 Google Sheets")
+        # 寫入
+        sheet.update(rows, value_input_option='USER_ENTERED')
+        
+        print(f"✅ 成功上傳 {len(results)} 筆數據到 Google Sheets")
         return True
         
     except Exception as e:
-        print(f"❌ 上傳到 Google Sheets 失敗：{str(e)}")
+        print(f"❌ 上傳失敗：{str(e)}")
         return False
 
-# ==================== 主程式 ====================
 def main():
-    print(f"\n{'='*60}")
-    print(f"🔍 開始掃描 {len(SCAN_TICKERS)} 支股票")
-    print(f"📅 掃描時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"{'='*60}\n")
+    print("\n" + "="*70)
+    print("🚀 股票掃描器 with Google Sheets")
+    print("="*70)
+    print(f"掃描時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("="*70 + "\n")
     
-    # 建立輸出資料夾
-    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+    # 建立資料夾
+    Path(OUTPUT_FOLDER).mkdir(exist_ok=True)
     
+    # 掃描股票
     results = []
     for idx, ticker in enumerate(SCAN_TICKERS, 1):
         print(f"[{idx}/{len(SCAN_TICKERS)}] {ticker}...", end=" ")
@@ -174,26 +186,34 @@ def main():
         else:
             print("⏭️")
     
+    print(f"\n{'='*70}")
+    
     if results:
-        df = pd.DataFrame(results)
-        df = df.sort_values('SignalCount', ascending=False)
+        # 排序
+        results.sort(key=lambda x: x['Signal_Count'], reverse=True)
         
         # 儲存 CSV
-        output_file = os.path.join(OUTPUT_FOLDER, f"scanner_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
-        df.to_csv(output_file, index=False, encoding='utf-8-sig')
-        print(f"\n✅ CSV 已儲存：{output_file}")
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_file = os.path.join(OUTPUT_FOLDER, f"scanner_results_{timestamp}.csv")
+        
+        with open(output_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=list(results[0].keys()))
+            writer.writeheader()
+            writer.writerows(results)
+        
+        print(f"✅ CSV 已儲存：{output_file}")
         
         # 上傳到 Google Sheets
-        upload_to_google_sheets(df)
+        upload_to_google_sheets(results)
         
         # 顯示 TOP 10
-        print(f"\n📊 TOP 10 機會股：")
-        print(df[['Ticker', 'CurrentPrice', 'Change%', 'SignalCount', 'Signals']].head(10).to_string(index=False))
-        
+        print(f"\n📊 TOP 10:")
+        for i, r in enumerate(results[:10], 1):
+            print(f"{i}. {r['Ticker']}: ${r['Price']} ({r['Signal_Count']} 信號)")
     else:
-        print("\n⚠️ 沒有找到符合條件的股票")
+        print("⚠️ 沒有找到符合條件的股票")
     
-    print(f"\n{'='*60}")
+    print(f"{'='*70}\n")
 
 if __name__ == "__main__":
     main()
