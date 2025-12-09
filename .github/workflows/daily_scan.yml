@@ -1,0 +1,35 @@
+name: Daily Stock Scan
+
+on:
+  schedule:
+    # 每天 UTC 時間 21:15 (等於 PST 13:15)
+    - cron: '15 21 * * 1-5'
+  workflow_dispatch: # 允許手動點擊運行
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        pip install yfinance pandas numpy
+
+    - name: Run Scanner
+      run: python stock_scanner.py
+
+    - name: Commit and Push CSV
+      run: |
+        git config --global user.name 'GitHub Action'
+        git config --global user.email 'action@github.com'
+        git add stock_data/*.csv
+        git commit -m "Auto update scan results"
+        git push
