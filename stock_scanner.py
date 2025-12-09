@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-股票掃描器 v3.2 - 完全重寫版本
-修復了 yfinance DataFrame 兼容性問題
+股票掃描器 v3.3 - 極簡穩定版本
+使用最安全的方式提取 yfinance 數據
 """
 
 import yfinance as yf
@@ -10,21 +10,21 @@ import csv
 from datetime import datetime
 import os
 from pathlib import Path
+import pandas as pd
 
 OUTPUT_FOLDER = "stock_data"
 
-# 擴展的 190+ 支股票清單（S&P 500 + 其他高流動性股票）
+# 擴展的 190+ 支股票清單
 SCAN_TICKERS = [
-    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK.B", "JNJ", "V",
+    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "JNJ", "V",
     "WMT", "JPM", "PG", "MA", "HD", "DIS", "MCD", "ADBE", "CRM", "NFLX",
-    "INTC", "CSCO", "IBM", "ORCL", "MU", "PYPL", "SQ", "SHOP", "ASML", "AMD",
+    "INTC", "CSCO", "IBM", "ORCL", "MU", "PYPL", "SHOP", "ASML", "AMD",
     "QCOM", "AVGO", "LRCX", "KLAC", "MCHP", "AMAT", "SNPS", "CDNS", "ADSK", "CPRT",
-    "ANSS", "NOW", "ADP", "EXC", "NEE", "DUK", "SO", "AEP", "PCG", "ED",
+    "NOW", "ADP", "EXC", "NEE", "DUK", "SO", "AEP", "PCG", "ED",
     "WEC", "XEL", "CMS", "SRE", "PNW", "AWK", "NRG", "EVRG", "VRSN", "DDOG",
-    "ROP", "ODFL", "MLR", "PAYX", "DECK", "ULTA", "NVR", "KBH", "PHM", "DHI",
-    "LEN", "TPH", "SBNY", "UNM", "PGR", "HIG", "ALL", "AFG", "BHF", "RLI",
-    "OC", "CNP", "IEX", "CPAY", "LEG", "MAS", "SKM", "JKHY", "ATGE", "VEEV",
-    "APPF", "RBA", "CLOW", "FIX", "HY", "SMPL", "TPR", "BAC", "WFC",
+    "ROP", "ODFL", "PAYX", "DECK", "ULTA", "NVR", "KBH", "PHM", "DHI",
+    "LEN", "SBNY", "UNM", "PGR", "HIG", "ALL", "BHF", "OC", "IEX", "LEG",
+    "ATGE", "VEEV", "RBA", "CLOW", "FIX", "HY", "SMPL", "TPR", "BAC", "WFC",
     "GS", "MS", "BLK", "BK", "PNC", "USB", "COF", "AXP", "ICE", "CME",
     "COIN", "SOFI", "DASH", "XOM", "CVX", "COP", "EOG", "MPC", "PSX", "VLO",
     "FANG", "OKE", "KMI", "TPL", "CNX", "RRC", "DVN",
@@ -41,97 +41,69 @@ SCAN_TICKERS = [
     "RIOT", "MARA", "CLSK", "HUT", "QRVO", "FLEX", "APH", "MRAM", "SEMI", "NVRI", "PSTG", "AKAM", "DOCU", "PEGA"
 ]
 
-def calculate_sma(prices, period):
-    """計算簡單移動平均線"""
-    if len(prices) < period:
-        return None
-    return sum(prices[-period:]) / period
-
-def calculate_rsi(prices, period=14):
-    """計算相對強弱指數 (RSI)"""
-    if len(prices) < period + 1:
-        return None
-    
-    deltas = [prices[i] - prices[i-1] for i in range(1, len(prices))]
-    gains = [d if d > 0 else 0 for d in deltas]
-    losses = [-d if d < 0 else 0 for d in deltas]
-    
-    avg_gain = sum(gains[-period:]) / period
-    avg_loss = sum(losses[-period:]) / period
-    
-    if avg_loss == 0:
-        return 100 if avg_gain > 0 else 50
-    
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
-
-def calculate_macd(prices, fast=12, slow=26):
-    """計算 MACD"""
-    if len(prices) < slow:
-        return None
-    
-    ema_fast = calculate_sma(prices, fast)
-    ema_slow = calculate_sma(prices, slow)
-    
-    if ema_fast is None or ema_slow is None:
-        return None
-    
-    macd = ema_fast - ema_slow
-    return macd
-
 def scan_single_stock(ticker):
     """掃描單支股票"""
     try:
         print(f"  掃描 {ticker}...", end=" ")
         
-        # 下載 3 個月數據 - 使用安全的方式
+        # 下載數據
         data = yf.download(ticker, period="3mo", progress=False, auto_adjust=True)
         
-        # 檢查數據是否為空或無效
-        if data is None or data.empty:
+        if data is None or data.empty or len(data) < 20:
             print("❌ 無數據")
             return None
         
-        if len(data) < 20:
-            print("❌ 數據不足")
-            return None
-        
-        # 安全地提取數據 - 使用 .values 而不是 .tolist()
-        try:
-            close_prices = data['Close'].values.tolist()
-            volumes = data['Volume'].values.tolist()
-        except (AttributeError, KeyError) as e:
-            print(f"❌ 提取數據失敗")
-            return None
+        # 使用 pandas 的安全方式提取數據
+        close_prices = data['Close'].astype(float).tolist()
+        volumes = data['Volume'].astype(float).tolist()
         
         if not close_prices or not volumes:
             print("❌ 數據為空")
             return None
         
-        current_price = float(close_prices[-1])
-        prev_price = float(close_prices[-2]) if len(close_prices) > 1 else current_price
-        current_volume = int(volumes[-1])
-        avg_volume = sum(volumes[-20:]) / 20
+        current_price = close_prices[-1]
+        prev_price = close_prices[-2] if len(close_prices) > 1 else current_price
+        current_volume = volumes[-1]
+        avg_volume = sum(volumes[-20:]) / min(20, len(volumes))
         
         # 計算漲跌幅
-        if prev_price != 0:
-            change_pct = ((current_price - prev_price) / prev_price * 100)
-        else:
-            change_pct = 0
+        change_pct = ((current_price - prev_price) / prev_price * 100) if prev_price != 0 else 0
         
         # 計算技術指標
-        sma_20 = calculate_sma(close_prices, 20)
-        sma_50 = calculate_sma(close_prices, 50)
-        rsi = calculate_rsi(close_prices, 14)
-        macd = calculate_macd(close_prices)
+        # SMA 20
+        sma_20 = sum(close_prices[-20:]) / 20 if len(close_prices) >= 20 else None
+        # SMA 50
+        sma_50 = sum(close_prices[-50:]) / 50 if len(close_prices) >= 50 else None
+        
+        # RSI 14
+        if len(close_prices) >= 15:
+            deltas = [close_prices[i] - close_prices[i-1] for i in range(1, len(close_prices))]
+            gains = [d if d > 0 else 0 for d in deltas]
+            losses = [-d if d < 0 else 0 for d in deltas]
+            avg_gain = sum(gains[-14:]) / 14
+            avg_loss = sum(losses[-14:]) / 14
+            if avg_loss == 0:
+                rsi = 100 if avg_gain > 0 else 50
+            else:
+                rs = avg_gain / avg_loss
+                rsi = 100 - (100 / (1 + rs))
+        else:
+            rsi = None
+        
+        # MACD
+        if len(close_prices) >= 26:
+            ema_fast = sum(close_prices[-12:]) / 12
+            ema_slow = sum(close_prices[-26:]) / 26
+            macd = ema_fast - ema_slow
+        else:
+            macd = None
         
         # 52 週高低
         try:
             year_data = yf.download(ticker, period="1y", progress=False, auto_adjust=True)
             if year_data is not None and not year_data.empty:
-                high_52w = float(year_data['High'].values.max())
-                low_52w = float(year_data['Low'].values.min())
+                high_52w = float(year_data['High'].astype(float).max())
+                low_52w = float(year_data['Low'].astype(float).min())
             else:
                 high_52w = current_price
                 low_52w = current_price
@@ -142,33 +114,27 @@ def scan_single_stock(ticker):
         # 生成交易信號
         signals = []
         
-        # 信號 1：黃金交叉（20日 > 50日 SMA）
         if sma_20 and sma_50 and sma_20 > sma_50:
             signals.append("Golden_Cross")
         
-        # 信號 2：RSI 在合理範圍（30-70）
         if rsi and 30 < rsi < 70:
             signals.append("RSI_Normal")
         
-        # 信號 3：RSI 反彈（接近超賣但已反彈）
         if rsi and 30 < rsi < 45:
             signals.append("RSI_Bounce")
         
-        # 信號 4：成交量放大
         if current_volume > avg_volume * 1.5:
             signals.append("Volume_Surge")
         
-        # 信號 5：接近 52 週高點
         if current_price > high_52w * 0.95:
             signals.append("Near_52W_High")
         
-        # 信號 6：從低位反彈
         if current_price > low_52w * 1.2:
             signals.append("From_Low_Rebound")
         
         # 篩選條件：至少 2 個信號
         if len(signals) >= 2:
-            print(f"✅ {len(signals)} 個信號")
+            print(f"✅ {len(signals)} 信號")
             return {
                 'Ticker': ticker,
                 'Price': round(current_price, 2),
@@ -190,22 +156,20 @@ def scan_single_stock(ticker):
             return None
         
     except Exception as e:
-        print(f"❌ {str(e)[:40]}")
+        print(f"❌ {str(e)[:30]}")
         return None
 
 def main():
     print("\n" + "="*70)
-    print("🚀 股票掃描器 v3.2 - 完全重寫版本")
+    print("🚀 股票掃描器 v3.3 - 極簡穩定版本")
     print("="*70)
     print(f"掃描股票數量: {len(SCAN_TICKERS)}")
     print(f"掃描時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"篩選條件: 至少 2 個技術面信號")
     print("="*70 + "\n")
     
-    # 創建資料夾
     Path(OUTPUT_FOLDER).mkdir(exist_ok=True)
     
-    # 生成 CSV 檔案名
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     output_file = os.path.join(OUTPUT_FOLDER, f"scanner_results_{timestamp}.csv")
     
@@ -220,10 +184,8 @@ def main():
         if result:
             results.append(result)
     
-    # 按信號數排序（多信號優先）
     results.sort(key=lambda x: x['Signal_Count'], reverse=True)
     
-    # 寫入 CSV
     print(f"\n{'='*70}")
     
     if len(results) > 0:
@@ -243,8 +205,8 @@ def main():
             print(f"📁 結果已保存到: {output_file}")
             print(f"{'='*70}\n")
             
-            print("🏆 TOP 10 候選股票（按信號數排序）:\n")
-            print(f"{'Ticker':<8} {'Price':<10} {'Change%':<10} {'RSI':<8} {'Signal':<7} {'主要信號':<40}")
+            print("🏆 TOP 10 候選股票:\n")
+            print(f"{'Ticker':<8} {'Price':<10} {'Change%':<10} {'RSI':<8} {'Signal':<7} {'信號':<40}")
             print("-" * 90)
             
             for r in results[:10]:
