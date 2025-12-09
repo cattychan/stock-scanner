@@ -24,13 +24,15 @@ jobs:
     - name: Install dependencies
       run: |
         pip install --upgrade pip
-        pip install yfinance pandas numpy
+        pip install yfinance pandas numpy gspread oauth2client
 
     - name: Create stock_data directory
       run: mkdir -p stock_data
 
-    - name: Run Scanner
-      run: python stock_scanner.py
+    - name: Run Scanner and Upload to Google Sheets
+      env:
+        GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      run: python stock_scanner_with_sheets.py
       
     - name: List generated files
       run: ls -la stock_data/
