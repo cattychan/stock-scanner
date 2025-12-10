@@ -38,19 +38,6 @@ jobs:
     - name: List generated files
       run: ls -la stock_data/
 
-    # 👇 在這裡添加新步驟！
-    - name: Create latest_scan.csv for dashboard
-      run: |
-        cd stock_data
-        latest=$(ls -t results_*.csv 2>/dev/null | head -1)
-        if [ -n "$latest" ]; then
-          cp "$latest" latest_scan.csv
-          echo "✓ Created latest_scan.csv from $latest"
-          ls -lh latest_scan.csv
-        else
-          echo "⚠️ No results files found"
-        fi
-
     - name: Commit and Push CSV
       run: |
         git config --local user.email "action@github.com"
