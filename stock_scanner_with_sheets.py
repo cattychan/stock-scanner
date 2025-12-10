@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-股票掃描器 - 專業版 v2.1
+股票掃描器 - 專業版 v2.2
 - 修正 Google Sheets 格式問題
 - 至少 3 個信號
 - 風險評分系統
 - 波動率篩選
 - 流動性篩選
 - 100+ 支股票
-- 新增：HTML Dashboard 支援
+- 新增：HTML Dashboard 支援（信號分數）
 """
 
 import yfinance as yf
@@ -69,7 +69,7 @@ def calculate_risk_score(data, last_close, current_rsi, current_macd, bb_width, 
     分數越低 = 風險越低
     """
     risk_score = 0
-    
+
     # 1. 波動率風險 (0-25分)
     if volatility > 50:
         risk_score += 25
@@ -81,7 +81,7 @@ def calculate_risk_score(data, last_close, current_rsi, current_macd, bb_width, 
         risk_score += 10
     else:
         risk_score += 5
-    
+
     # 2. RSI 風險 (0-20分)
     if current_rsi > 80:
         risk_score += 20
@@ -93,7 +93,7 @@ def calculate_risk_score(data, last_close, current_rsi, current_macd, bb_width, 
         risk_score += 10
     else:
         risk_score += 5
-    
+
     # 3. 價格距離 52 週高點 (0-15分)
     high_52w = float(data['High'].max())
     distance_from_high = (high_52w - last_close) / high_52w * 100
@@ -105,7 +105,7 @@ def calculate_risk_score(data, last_close, current_rsi, current_macd, bb_width, 
         risk_score += 15
     else:
         risk_score += 8
-    
+
     # 4. MACD 趨勢風險 (0-15分)
     if current_macd < -0.5:
         risk_score += 15
@@ -115,7 +115,7 @@ def calculate_risk_score(data, last_close, current_rsi, current_macd, bb_width, 
         risk_score += 5
     else:
         risk_score += 8
-    
+
     # 5. 布林帶寬度 (0-15分)
     if bb_width > 15:
         risk_score += 15
@@ -125,7 +125,7 @@ def calculate_risk_score(data, last_close, current_rsi, current_macd, bb_width, 
         risk_score += 5
     else:
         risk_score += 8
-    
+
     # 6. 價格水平風險 (0-10分)
     if last_close < 10:
         risk_score += 10
@@ -135,7 +135,7 @@ def calculate_risk_score(data, last_close, current_rsi, current_macd, bb_width, 
         risk_score += 5
     else:
         risk_score += 3
-    
+
     return min(risk_score, 100)
 
 
@@ -153,38 +153,38 @@ def scan_single_stock(ticker):
         data = yf.download(ticker, period="3mo", progress=False, auto_adjust=True)
         if data.empty or len(data) < 50:
             return None
-        
+
         # ===== 基礎數據 =====
         last_close = float(data['Close'].iloc[-1])
         prev_close = float(data['Close'].iloc[-2])
         current_volume = float(data['Volume'].iloc[-1])
         avg_volume_20 = float(data['Volume'].tail(20).mean())
-        
+
         # ===== 流動性篩選 =====
         if avg_volume_20 < MIN_AVG_VOLUME:
             print(f"⏭️  流動性不足")
             return None
-        
+
         # ===== 價格篩選 =====
         if last_close < MIN_PRICE:
             print(f"⏭️  價格過低")
             return None
-        
+
         # ===== 計算波動率 =====
         volatility = calculate_volatility(data)
         if volatility > MAX_VOLATILITY:
             print(f"⏭️  波動率過高")
             return None
-        
+
         # ===== 技術指標計算 =====
         close_series = data['Close']
-        
+
         # SMA
         sma_20 = float(close_series.rolling(window=20).mean().iloc[-1])
         sma_50 = float(close_series.rolling(window=50).mean().iloc[-1])
         prev_sma_20 = float(close_series.rolling(window=20).mean().iloc[-2])
         prev_sma_50 = float(close_series.rolling(window=50).mean().iloc[-2])
-        
+
         # RSI
         delta = close_series.diff()
         gain = delta.where(delta > 0, 0).rolling(window=14).mean()
@@ -192,7 +192,7 @@ def scan_single_stock(ticker):
         rs = gain / loss
         rsi_series = 100 - (100 / (1 + rs))
         current_rsi = float(rsi_series.iloc[-1])
-        
+
         # MACD
         ema_12 = close_series.ewm(span=12, adjust=False).mean()
         ema_26 = close_series.ewm(span=26, adjust=False).mean()
@@ -201,7 +201,7 @@ def scan_single_stock(ticker):
         macd_hist = macd_line - signal_line
         current_macd = float(macd_hist.iloc[-1])
         prev_macd = float(macd_hist.iloc[-2])
-        
+
         # 布林帶
         sma_bb = close_series.rolling(window=20).mean()
         std_bb = close_series.rolling(window=20).std()
@@ -211,12 +211,12 @@ def scan_single_stock(ticker):
         bb_lower = float(lower_band.iloc[-1])
         bb_middle = float(sma_bb.iloc[-1])
         bb_width = ((bb_upper - bb_lower) / bb_middle * 100)
-        
+
         # VWAP
         typical_price = (data['High'] + data['Low'] + data['Close']) / 3
         vwap = (typical_price * data['Volume']).cumsum() / data['Volume'].cumsum()
         current_vwap = float(vwap.iloc[-1])
-        
+
         # 52 週數據
         year_data = yf.download(ticker, period="1y", progress=False, auto_adjust=True)
         if not year_data.empty:
@@ -227,64 +227,64 @@ def scan_single_stock(ticker):
             high_52w = last_close
             low_52w = last_close
             high_20d = last_close
-        
+
         change_pct = ((last_close - prev_close) / prev_close * 100)
-        
+
         # ===== 計算風險評分 =====
         risk_score = calculate_risk_score(data, last_close, current_rsi, current_macd, bb_width, volatility)
-        
+
         # ===== 風險篩選 =====
         if risk_score > MAX_RISK_SCORE:
             print(f"⏭️  風險過高 ({risk_score})")
             return None
-        
+
         # ===== 生成交易信號 =====
         signals = []
-        
+
         if sma_20 > sma_50 and prev_sma_20 <= prev_sma_50:
             signals.append("黃金交叉")
-        
+
         if last_close > sma_20 and sma_20 > sma_50:
             signals.append("均線多頭")
-        
+
         if 30 < current_rsi < 50:
             signals.append("RSI反彈")
         elif 50 < current_rsi < 70:
             signals.append("RSI強勢")
-        
+
         if current_macd > 0 and prev_macd <= 0:
             signals.append("MACD翻正")
         elif current_macd > 0 and current_macd > prev_macd:
             signals.append("MACD加速")
-        
+
         if current_volume > avg_volume_20 * 1.5:
             signals.append("成交量激增")
-        
+
         if last_close >= high_20d * 0.99:
             signals.append("接近20日高")
-        
+
         if last_close >= high_52w * 0.90:
             signals.append("接近52週高")
-        
+
         if last_close >= low_52w * 1.2:
             signals.append("從低點反彈")
-        
+
         if last_close > bb_upper:
             signals.append("突破布林上軌")
-        
+
         if prev_close < bb_lower and last_close >= bb_lower:
             signals.append("布林下軌反彈")
-        
+
         position_bb = (last_close - bb_lower) / (bb_upper - bb_lower)
         if 0.5 < position_bb <= 1.0:
             signals.append("布林帶強勢")
-        
+
         if last_close > current_vwap:
             signals.append("站上VWAP")
-        
+
         if volatility < 20 and current_volume > avg_volume_20 * 1.3:
             signals.append("低波動放量")
-        
+
         # 顯示結果
         if len(signals) >= MIN_SIGNALS:
             risk_label = "低風險" if risk_score < 40 else "中風險" if risk_score < 60 else "偏高風險"
@@ -292,7 +292,7 @@ def scan_single_stock(ticker):
         else:
             print(f"⏭️  {len(signals)} 信號")
             return None
-        
+
         # 篩選並返回
         if len(signals) >= MIN_SIGNALS:
             return {
@@ -307,18 +307,18 @@ def scan_single_stock(ticker):
                 'MACD': round(current_macd, 4),
                 'BB_Width_%': round(bb_width, 1),
                 'VWAP': round(current_vwap, 2),
-                'Volume': f"{int(current_volume):,}",  # 🔧 千位分隔符
-                'Avg_Vol_20D': f"{int(avg_volume_20):,}",  # 🔧 千位分隔符
-                'Vol_Ratio': f"{round(current_volume / avg_volume_20, 2):.2f}x",  # 🔧 格式化為字串
+                'Volume': f"{int(current_volume):,}",
+                'Avg_Vol_20D': f"{int(avg_volume_20):,}",
+                'Vol_Ratio': f"{round(current_volume / avg_volume_20, 2):.2f}x",
                 '52W_High': round(high_52w, 2),
                 '52W_Low': round(low_52w, 2),
                 'Signals': len(signals),
                 'Signal_List': ", ".join(signals),
                 'Scan_Time': datetime.now().strftime('%Y-%m-%d %H:%M')
             }
-        
+
         return None
-        
+
     except Exception as e:
         print(f"❌ {str(e)[:40]}")
         return None
@@ -329,31 +329,30 @@ def upload_to_google_sheets(results):
     try:
         creds_json = os.environ.get('GOOGLE_CREDENTIALS')
         sheet_id = os.environ.get('GOOGLE_SHEET_ID')
-        
+
         if not creds_json or not sheet_id:
             print("⚠️  缺少憑證")
             return False
-        
+
         creds_dict = json.loads(creds_json)
         scope = ['https://spreadsheets.google.com/feeds',
                 'https://www.googleapis.com/auth/drive']
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
-        
+
         sheet = client.open_by_key(sheet_id).sheet1
         sheet.clear()
-        
+
         headers = list(results[0].keys())
         rows = [headers]
         for r in results:
             rows.append([r[h] for h in headers])
-        
-        # 🔧 使用 RAW 模式，避免 Google Sheets 自動格式轉換
+
         sheet.update(rows, value_input_option='RAW')
-        
+
         print(f"✅ 上傳 {len(results)} 筆到 Google Sheets")
         return True
-        
+
     except Exception as e:
         print(f"❌ 上傳失敗：{str(e)[:40]}")
         return False
@@ -361,7 +360,7 @@ def upload_to_google_sheets(results):
 
 def main():
     print("\n" + "="*80)
-    print("🚀 股票掃描器 - 專業版 v2.1")
+    print("🚀 股票掃描器 - 專業版 v2.2")
     print("="*80)
     print(f"掃描時間: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"掃描股票: {len(SCAN_TICKERS)} 支")
@@ -372,70 +371,100 @@ def main():
     print(f"  • 平均成交量 ≥ {MIN_AVG_VOLUME:,}")
     print(f"  • 股價 ≥ ${MIN_PRICE}")
     print("="*80 + "\n")
-    
+
     Path(OUTPUT_FOLDER).mkdir(exist_ok=True)
-    
+
     results = []
     for idx, ticker in enumerate(SCAN_TICKERS, 1):
         print(f"[{idx}/{len(SCAN_TICKERS)}] {ticker}... ", end="")
         result = scan_single_stock(ticker)
         if result:
             results.append(result)
-    
+
     print(f"\n{'='*80}")
-    
+
     if results:
         # 排序：風險分數由低到高
         results.sort(key=lambda x: (x['Risk_Score'], -x['Signals']))
-        
+
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        
+
         # 1️⃣ 保存原始格式 CSV（給 Google Sheets 和 Perplexity 用）
         output_file = os.path.join(OUTPUT_FOLDER, f"results_{timestamp}.csv")
         with open(output_file, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.DictWriter(f, fieldnames=list(results[0].keys()))
             writer.writeheader()
             writer.writerows(results)
-        
+
         print(f"✅ CSV 保存: {output_file}")
-        
-        # 2️⃣ 創建 HTML Dashboard 專用版本（重命名列）
+
+        # 2️⃣ 創建 HTML Dashboard 專用版本（添加信號分數 + 重命名列）
         df_html = pd.DataFrame(results)
+
+        # 🆕 計算信號分數（買入信號數 - 賣出信號數）
+        def calculate_signal_score(signal_list):
+            """計算信號偏向分數：正數 = 偏向買入，負數 = 偏向賣出"""
+            if not signal_list or pd.isna(signal_list):
+                return 0
+
+            signal_list = str(signal_list)
+
+            # 買入關鍵字
+            buy_keywords = ['黃金交叉', '均線多頭', 'RSI反彈', 'RSI強勢', 'MACD翻正', 
+                            'MACD加速', '成交量激增', '接近20日高', '接近52週高', 
+                            '從低點反彈', '突破布林上軌', '布林下軌反彈', '布林帶強勢', 
+                            '站上VWAP', '低波動放量']
+
+            # 賣出關鍵字
+            sell_keywords = ['死亡交叉', '均線空頭', 'RSI超買']
+
+            # 計算數量
+            buy_count = sum(1 for keyword in buy_keywords if keyword in signal_list)
+            sell_count = sum(1 for keyword in sell_keywords if keyword in signal_list)
+
+            # 返回分數（可以是正數或負數）
+            return buy_count - sell_count
+
+        # 應用計算（創建 Signal_Score 列）
+        df_html['Signal_Score'] = df_html['Signal_List'].apply(calculate_signal_score)
+
+        # 重命名列（給 HTML Dashboard 用）
         df_html = df_html.rename(columns={
             'Ticker': 'Symbol',
             'Change_%': 'Change_Percent',
-            'Signal_List': 'Signal',
+            'Signal_List': 'Signal_Details',  # ✅ 完整中文信號列表
+            'Signal_Score': 'Signal',         # ✅ 信號分數（數字）
             '52W_High': 'High_52W',
             '52W_Low': 'Low_52W',
             'Vol_Ratio': 'Volume_Change',
             'Volatility_%': 'Volatility',
             'BB_Width_%': 'BB_Width'
         })
-        
+
         # 保存為 latest_scan.csv（給 HTML Dashboard 用）
         html_csv_path = os.path.join(OUTPUT_FOLDER, 'latest_scan.csv')
         df_html.to_csv(html_csv_path, index=False, encoding='utf-8-sig')
         print(f"✅ HTML 版本保存: {html_csv_path}")
-        
+
         # 3️⃣ 上傳到 Google Sheets（使用原始格式）
         upload_to_google_sheets(results)
-        
+
         # 顯示 TOP 10
         print(f"\n📊 TOP 10 最佳機會（按風險分數排序）:\n")
         print(f"{'排名':<4} {'代碼':<6} {'價格':<10} {'風險':<6} {'波動':<7} {'RSI':<6} {'信號':<4} {'信號列表':<50}")
         print("-" * 100)
-        
+
         for i, r in enumerate(results[:10], 1):
             risk_label = "🟢" if r['Risk_Score'] < 40 else "🟡" if r['Risk_Score'] < 60 else "🟠"
             signals_short = r['Signal_List'][:45] + "..." if len(r['Signal_List']) > 45 else r['Signal_List']
             print(f"{i:<4} {r['Ticker']:<6} ${r['Price']:<9.2f} {risk_label}{r['Risk_Score']:<5} {r['Volatility_%']:<6.1f}% {r['RSI']:<5.1f} {r['Signals']:<4} {signals_short:<50}")
-        
+
         print(f"\n✅ 找到 {len(results)} 支符合條件的股票")
         print(f"📈 平均風險分數: {sum(r['Risk_Score'] for r in results) / len(results):.1f}")
         print(f"📊 平均波動率: {sum(r['Volatility_%'] for r in results) / len(results):.1f}%")
     else:
         print("⚠️  沒有符合條件的股票")
-    
+
     print(f"{'='*80}\n")
 
 
