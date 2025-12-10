@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/SclgEoLgK8l9VUoRDO5IaJtTgk1Hq5yPHshwT4RuTnGhwO-BG8wbpN0YewoSzknJLNvV9bTSMprhDYiLdIctLIGgiVl7d1E0ppzSH0IqZRosTkfSM9QniGuDwMJYNkdEwNni33qAKv0_gwsyyc_5TG8Ikh862ZomzFNEDbKy390='></script><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/Onbg-rVahffzE4SdXqumFwj2l60y5S5ds1ixhbT_5KB5r9aVnqkhm0LZ6Eg2rEW6FeCPK-CAghCZuo_I-acLwhYX-u3KjS3tI2KLCfXHFcoD5X16nHlqmcpjeB44Da5169ohzxIYtgu_yYlEoXDw64vBBmmgwK2skFLTBiLOD-o='></script>
+<head><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/x_rikVs49s_aG4jNJtkHVdJAX7a-eS8qubpH_bycIR_a3De0J68ne31YZz-IW_Ue2T9ukBw8cWjHFolhWC7B5cOnsIyc7HA0WbscMHVMen1F5JqN8HiT54CEzm6LcRydChl2YJ8bQkpo9MEKEhuhbDh-IfwuQfdUwGAw8h8HY88='></script><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/Onbg-rVahffzE4SdXqumFwj2l60y5S5ds1ixhbT_5KB5r9aVnqkhm0LZ6Eg2rEW6FeCPK-CAghCZuo_I-acLwhYX-u3KjS3tI2KLCfXHFcoD5X16nHlqmcpjeB44Da5169ohzxIYtgu_yYlEoXDw64vBBmmgwK2skFLTBiLOD-o='></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Scanner Dashboard v3.5</title>
@@ -481,21 +481,23 @@ CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
                 const isWatched = app.watchlist.some(w => w.symbol === stock.Symbol);
                 const change = parseFloat(stock.Change_Percent) || 0;
                 const changeClass = change > 0 ? 'positive' : change < 0 ? 'negative' : '';
-                
-                // FIX 1: Volume_Change - display as-is (already formatted like "0.59x")
+
+                // ✅ FIX 1: Volume_Change - 直接显示（CSV中已经是 "0.87x" 格式）
                 const volChange = stock.Volume_Change || 'N/A';
-                
-                // FIX 2: High_52W - check for valid number before parsing
+
+                // ✅ FIX 2: High_52W - 检查有效性
                 const high52w = stock.High_52W && !isNaN(parseFloat(stock.High_52W)) 
                     ? parseFloat(stock.High_52W).toFixed(2) 
                     : 'N/A';
-                
-                // FIX 3: Signal - ensure correct value from Signal column
-                // FIX 3: Signal - calculate signal score (buy signals - sell signals)
-                const signalScore = parseInt(stock.Signal) || 0;
-                const signalLabel = signalScore > 0 ? `+${signalScore}` : signalScore.toString();
-                const signalClass = signalScore > 0 ? 'buy' : signalScore < 0 ? 'sell' : 'hold';
-                
+
+                // ✅ FIX 3: Signal - 直接显示数字（带+号如果是正数）
+                const signalValue = parseInt(stock.Signal) || 0;
+                const signalLabel = signalValue > 0 ? `+${signalValue}` : signalValue.toString();
+                const signalClass = signalValue > 0 ? 'buy' : signalValue < 0 ? 'sell' : 'hold';
+
+                // ✅ FIX 4: Signal_Details - 完整的中文信号列表（用于tooltip）
+                const signalDetails = stock.Signal_Details || '无信号';
+
                 return `<tr class="${isWatched ? 'watchlisted' : ''}">
                     <td>${stock.Symbol}${high52w !== 'N/A' && parseFloat(stock.Price) >= parseFloat(high52w) * 0.98 ? ' 🏆' : ''}</td>
                     <td style="font-weight: 600;">$${parseFloat(stock.Price).toFixed(2)}</td>
@@ -503,7 +505,7 @@ CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
                     <td>${volChange}</td>
                     <td style="color: ${parseFloat(stock.RSI) > 70 ? 'var(--color-danger)' : parseFloat(stock.RSI) < 30 ? 'var(--color-success)' : 'inherit'}; font-weight: 600;">${parseFloat(stock.RSI).toFixed(0)}</td>
                     <td>${parseFloat(stock.MACD).toFixed(2)}</td>
-                    <td><span class="signal-${signalClass}">${signalLabel}</span></td>
+                    <td title="${signalDetails}" style="cursor: help;"><span class="signal-${signalClass}" style="cursor: help;">${signalLabel}</span></td>
                     <td>${high52w}</td>
                     <td class="actions">
                         <button class="action-btn ${isWatched ? 'watching' : ''}" data-symbol="${stock.Symbol}" title="Watchlist">⭐</button>
