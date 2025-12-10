@@ -2,12 +2,17 @@
 # -*- coding: utf-8 -*-
 
 """
-股票掃描器 - 終極修復版
-完全避開 pandas Series 判斷問題
+股票掃描器 - 專業版 v2.0
+- 至少 3 個信號
+- 風險評分系統
+- 波動率篩選
+- 流動性篩選
+- 100+ 支股票
 """
 
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import csv
 from datetime import datetime
 import os
@@ -19,43 +24,176 @@ import warnings
 warnings.filterwarnings('ignore')
 
 OUTPUT_FOLDER = "stock_data"
-MIN_SIGNALS = 2
 
+# ========== 配置參數 ==========
+MIN_SIGNALS = 3  # 至少 3 個信號
+MAX_VOLATILITY = 60  # 最大年化波動率 60%
+MIN_AVG_VOLUME = 500000  # 最小平均成交量 50萬股
+MIN_PRICE = 5.0  # 最低股價 $5（排除垃圾股）
+MAX_RISK_SCORE = 70  # 最大風險分數 70（越低越好）
+
+# ========== 100+ 支美股清單 ==========
 SCAN_TICKERS = [
-    "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "JNJ", "V",
-    "WMT", "JPM", "PG", "MA", "HD", "DIS", "MCD", "ADBE", "CRM", "NFLX",
-    "INTC", "CSCO", "IBM", "ORCL", "MU", "PYPL", "SHOP", "ASML", "AMD",
-    "QCOM", "AVGO", "LRCX", "KLAC", "MCHP", "AMAT", "SNPS", "CDNS", "ADSK",
-    "NOW", "ADP"
+    # 科技巨頭 (Mega Cap Tech)
+    "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "META", "TSLA", "AVGO", "ORCL",
+    
+    # 半導體 (Semiconductors)
+    "AMD", "INTC", "QCOM", "TXN", "ADI", "MRVL", "MU", "AMAT", "LRCX", "KLAC",
+    "ASML", "SNPS", "CDNS", "MCHP", "ON", "NXPI", "MPWR", "SWKS",
+    
+    # 軟體 & 雲端 (Software & Cloud)
+    "CRM", "ADBE", "NOW", "INTU", "WDAY", "PANW", "CRWD", "ZS", "DDOG", "NET",
+    "SNOW", "PLTR", "U", "DOCU", "TWLO", "ZM", "OKTA", "MDB",
+    
+    # 電商 & 消費 (E-commerce & Consumer)
+    "SHOP", "MELI", "BKNG", "ABNB", "DASH", "UBER", "LYFT", "ETSY", "W", "CHWY",
+    
+    # 金融 (Financials)
+    "JPM", "BAC", "WFC", "GS", "MS", "C", "BLK", "SCHW", "AXP", "V", "MA", "PYPL",
+    "SQ", "COIN", "SOFI",
+    
+    # 醫療保健 (Healthcare)
+    "JNJ", "UNH", "LLY", "ABBV", "MRK", "TMO", "ABT", "DHR", "PFE", "AMGN",
+    "GILD", "VRTX", "REGN", "BMY", "CVS",
+    
+    # 工業 (Industrials)
+    "BA", "CAT", "GE", "HON", "UPS", "RTX", "LMT", "DE", "MMM", "UNP",
+    
+    # 能源 (Energy)
+    "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HAL",
+    
+    # 消費品 (Consumer Goods)
+    "PG", "KO", "PEP", "COST", "WMT", "HD", "LOW", "NKE", "SBUX", "MCD",
+    "TGT", "DIS", "NFLX", "CMCSA",
+    
+    # 其他重要股票
+    "IBM", "CSCO", "ADSK", "ADP", "PAYX", "ROP", "ICE", "CME", "SPGI", "MCO"
 ]
 
+def calculate_risk_score(data, last_close, current_rsi, current_macd, bb_width, volatility):
+    """
+    計算風險評分 (0-100)
+    分數越低 = 風險越低 = 越適合投資
+    """
+    risk_score = 0
+    
+    # 1. 波動率風險 (0-25分)
+    if volatility > 50:
+        risk_score += 25
+    elif volatility > 40:
+        risk_score += 20
+    elif volatility > 30:
+        risk_score += 15
+    elif volatility > 20:
+        risk_score += 10
+    else:
+        risk_score += 5
+    
+    # 2. RSI 風險 (0-20分)
+    if current_rsi > 80:  # 超買
+        risk_score += 20
+    elif current_rsi > 70:
+        risk_score += 15
+    elif current_rsi < 20:  # 超賣
+        risk_score += 20
+    elif current_rsi < 30:
+        risk_score += 10
+    else:
+        risk_score += 5
+    
+    # 3. 價格距離 52 週高點 (0-15分)
+    high_52w = float(data['High'].max())
+    distance_from_high = (high_52w - last_close) / high_52w * 100
+    if distance_from_high > 50:  # 離高點很遠（可能在底部）
+        risk_score += 5
+    elif distance_from_high > 30:
+        risk_score += 10
+    elif distance_from_high < 5:  # 接近高點（可能回調）
+        risk_score += 15
+    else:
+        risk_score += 8
+    
+    # 4. MACD 趨勢風險 (0-15分)
+    if current_macd < -0.5:  # 強烈負向
+        risk_score += 15
+    elif current_macd < 0:
+        risk_score += 10
+    elif current_macd > 0.5:  # 強烈正向
+        risk_score += 5
+    else:
+        risk_score += 8
+    
+    # 5. 布林帶寬度（波動性）(0-15分)
+    if bb_width > 15:  # 高波動
+        risk_score += 15
+    elif bb_width > 10:
+        risk_score += 10
+    elif bb_width < 5:  # 低波動（可能突破）
+        risk_score += 5
+    else:
+        risk_score += 8
+    
+    # 6. 價格水平風險 (0-10分)
+    if last_close < 10:  # 低價股風險高
+        risk_score += 10
+    elif last_close < 20:
+        risk_score += 7
+    elif last_close > 500:  # 超高價股
+        risk_score += 5
+    else:
+        risk_score += 3
+    
+    return min(risk_score, 100)
+
+def calculate_volatility(data):
+    """計算年化波動率 (%)"""
+    returns = data['Close'].pct_change().dropna()
+    volatility = returns.std() * np.sqrt(252) * 100  # 年化
+    return float(volatility)
+
 def scan_single_stock(ticker):
-    """掃描單支股票 - 終極修復版"""
+    """掃描單支股票 - 專業版"""
     try:
         # 下載數據
         data = yf.download(ticker, period="3mo", progress=False, auto_adjust=True)
         
         if data.empty or len(data) < 50:
-            print("⏭️ 數據不足")
             return None
         
-        # ===== 提取數據並立即轉為 Python float =====
+        # ===== 基礎數據 =====
         last_close = float(data['Close'].iloc[-1])
         prev_close = float(data['Close'].iloc[-2])
         current_volume = float(data['Volume'].iloc[-1])
         
         # 計算平均成交量
-        vol_series = data['Volume'].tail(20)
-        avg_volume_20 = float(vol_series.mean())
+        avg_volume_20 = float(data['Volume'].tail(20).mean())
         
-        # 計算 SMA
+        # ===== 流動性篩選 =====
+        if avg_volume_20 < MIN_AVG_VOLUME:
+            print(f"⏭️ 流動性不足 ({avg_volume_20:,.0f} < {MIN_AVG_VOLUME:,.0f})")
+            return None
+        
+        # ===== 價格篩選 =====
+        if last_close < MIN_PRICE:
+            print(f"⏭️ 價格過低 (${last_close:.2f})")
+            return None
+        
+        # ===== 計算波動率 =====
+        volatility = calculate_volatility(data)
+        if volatility > MAX_VOLATILITY:
+            print(f"⏭️ 波動率過高 ({volatility:.1f}% > {MAX_VOLATILITY}%)")
+            return None
+        
+        # ===== 技術指標計算 =====
         close_series = data['Close']
+        
+        # SMA
         sma_20 = float(close_series.rolling(window=20).mean().iloc[-1])
         sma_50 = float(close_series.rolling(window=50).mean().iloc[-1])
         prev_sma_20 = float(close_series.rolling(window=20).mean().iloc[-2])
         prev_sma_50 = float(close_series.rolling(window=50).mean().iloc[-2])
         
-        # 計算 RSI
+        # RSI
         delta = close_series.diff()
         gain = delta.where(delta > 0, 0).rolling(window=14).mean()
         loss = -delta.where(delta < 0, 0).rolling(window=14).mean()
@@ -63,7 +201,7 @@ def scan_single_stock(ticker):
         rsi_series = 100 - (100 / (1 + rs))
         current_rsi = float(rsi_series.iloc[-1])
         
-        # 計算 MACD
+        # MACD
         ema_12 = close_series.ewm(span=12, adjust=False).mean()
         ema_26 = close_series.ewm(span=26, adjust=False).mean()
         macd_line = ema_12 - ema_26
@@ -72,7 +210,7 @@ def scan_single_stock(ticker):
         current_macd = float(macd_hist.iloc[-1])
         prev_macd = float(macd_hist.iloc[-2])
         
-        # 計算布林帶
+        # 布林帶
         sma_bb = close_series.rolling(window=20).mean()
         std_bb = close_series.rolling(window=20).std()
         upper_band = sma_bb + (std_bb * 2)
@@ -82,12 +220,12 @@ def scan_single_stock(ticker):
         bb_middle = float(sma_bb.iloc[-1])
         bb_width = ((bb_upper - bb_lower) / bb_middle * 100)
         
-        # 計算 VWAP
+        # VWAP
         typical_price = (data['High'] + data['Low'] + data['Close']) / 3
         vwap = (typical_price * data['Volume']).cumsum() / data['Volume'].cumsum()
         current_vwap = float(vwap.iloc[-1])
         
-        # 獲取 52 週數據
+        # 52 週數據
         year_data = yf.download(ticker, period="1y", progress=False, auto_adjust=True)
         if not year_data.empty:
             high_52w = float(year_data['High'].max())
@@ -100,7 +238,15 @@ def scan_single_stock(ticker):
         
         change_pct = ((last_close - prev_close) / prev_close * 100)
         
-        # ===== 生成信號（全部使用 Python float，避免 Series 判斷）=====
+        # ===== 計算風險評分 =====
+        risk_score = calculate_risk_score(data, last_close, current_rsi, current_macd, bb_width, volatility)
+        
+        # ===== 風險篩選 =====
+        if risk_score > MAX_RISK_SCORE:
+            print(f"⏭️ 風險過高 (風險分數: {risk_score})")
+            return None
+        
+        # ===== 生成交易信號 =====
         signals = []
         
         # 1. 黃金交叉
@@ -152,8 +298,17 @@ def scan_single_stock(ticker):
         if last_close > current_vwap:
             signals.append("站上VWAP")
         
-        # 顯示信號
-        print(f"✓ {len(signals)} 信號")
+        # 9. 低波動突破
+        if volatility < 20 and current_volume > avg_volume_20 * 1.3:
+            signals.append("低波動放量")
+        
+        # 顯示結果
+        if len(signals) >= MIN_SIGNALS:
+            risk_label = "低風險" if risk_score < 40 else "中風險" if risk_score < 60 else "偏高風險"
+            print(f"✓ {len(signals)} 信號 | 風險: {risk_score} ({risk_label})")
+        else:
+            print(f"⏭️ 只有 {len(signals)} 信號")
+            return None
         
         # 篩選
         if len(signals) >= MIN_SIGNALS:
@@ -161,20 +316,19 @@ def scan_single_stock(ticker):
                 'Ticker': ticker,
                 'Price': round(last_close, 2),
                 'Change_%': round(change_pct, 2),
+                'Risk_Score': risk_score,
+                'Volatility_%': round(volatility, 1),
                 'SMA_20': round(sma_20, 2),
                 'SMA_50': round(sma_50, 2),
-                'RSI': round(current_rsi, 2),
+                'RSI': round(current_rsi, 1),
                 'MACD': round(current_macd, 4),
-                'BB_Upper': round(bb_upper, 2),
-                'BB_Lower': round(bb_lower, 2),
-                'BB_Width': round(bb_width, 2),
+                'BB_Width': round(bb_width, 1),
                 'VWAP': round(current_vwap, 2),
                 'Volume': int(current_volume),
                 'Avg_Vol': int(avg_volume_20),
                 'Vol_Ratio': round(current_volume / avg_volume_20, 2),
                 '52W_High': round(high_52w, 2),
                 '52W_Low': round(low_52w, 2),
-                '20D_High': round(high_20d, 2),
                 'Signals': len(signals),
                 'Signal_List': ", ".join(signals),
                 'Time': datetime.now().strftime('%Y-%m-%d %H:%M')
@@ -219,11 +373,18 @@ def upload_to_google_sheets(results):
         return False
 
 def main():
-    print("\n" + "="*70)
-    print(f"🚀 股票掃描器（≥ {MIN_SIGNALS} 信號）")
-    print("="*70)
-    print(f"時間: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    print("="*70 + "\n")
+    print("\n" + "="*80)
+    print("🚀 股票掃描器 - 專業版 v2.0")
+    print("="*80)
+    print(f"掃描時間: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"掃描股票: {len(SCAN_TICKERS)} 支")
+    print(f"篩選條件:")
+    print(f"  • 至少 {MIN_SIGNALS} 個技術信號")
+    print(f"  • 風險評分 ≤ {MAX_RISK_SCORE}")
+    print(f"  • 波動率 ≤ {MAX_VOLATILITY}%")
+    print(f"  • 平均成交量 ≥ {MIN_AVG_VOLUME:,}")
+    print(f"  • 股價 ≥ ${MIN_PRICE}")
+    print("="*80 + "\n")
     
     Path(OUTPUT_FOLDER).mkdir(exist_ok=True)
     
@@ -234,10 +395,11 @@ def main():
         if result:
             results.append(result)
     
-    print(f"\n{'='*70}")
+    print(f"\n{'='*80}")
     
     if results:
-        results.sort(key=lambda x: x['Signals'], reverse=True)
+        # 排序：風險分數由低到高
+        results.sort(key=lambda x: (x['Risk_Score'], -x['Signals']))
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         output_file = os.path.join(OUTPUT_FOLDER, f"results_{timestamp}.csv")
@@ -251,15 +413,22 @@ def main():
         
         upload_to_google_sheets(results)
         
-        print(f"\n📊 TOP 10:\n")
-        for i, r in enumerate(results[:10], 1):
-            print(f"{i}. {r['Ticker']}: ${r['Price']} | RSI {r['RSI']} | {r['Signals']} 信號")
+        print(f"\n📊 TOP 10 最佳機會（按風險分數排序）:\n")
+        print(f"{'排名':<4} {'代碼':<6} {'價格':<8} {'風險':<6} {'波動':<6} {'RSI':<6} {'信號':<4} {'信號列表':<50}")
+        print("-" * 100)
         
-        print(f"\n✅ 找到 {len(results)} 支股票")
+        for i, r in enumerate(results[:10], 1):
+            risk_label = "🟢" if r['Risk_Score'] < 40 else "🟡" if r['Risk_Score'] < 60 else "🟠"
+            signals_short = r['Signal_List'][:45] + "..." if len(r['Signal_List']) > 45 else r['Signal_List']
+            print(f"{i:<4} {r['Ticker']:<6} ${r['Price']:<7.2f} {risk_label}{r['Risk_Score']:<5} {r['Volatility_%']:<5.1f}% {r['RSI']:<5.1f} {r['Signals']:<4} {signals_short:<50}")
+        
+        print(f"\n✅ 找到 {len(results)} 支符合條件的股票")
+        print(f"📈 平均風險分數: {sum(r['Risk_Score'] for r in results) / len(results):.1f}")
+        print(f"📊 平均波動率: {sum(r['Volatility_%'] for r in results) / len(results):.1f}%")
     else:
         print("⚠️ 沒有符合條件的股票")
     
-    print(f"{'='*70}\n")
+    print(f"{'='*80}\n")
 
 if __name__ == "__main__":
     main()
