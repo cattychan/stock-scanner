@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/OCqerVi06bfcTzS7DVDY0kbbPcS8_xjLVIm3m25RKDBN3L0cIr0lEOH_9b8WszsqjOwN9xqCnbXgUyh3FR50Qgef0J9jwKRLL8ZKDQVEAY_0OQB-vdexMUb0nxDbron29DWaQrQJYfWb5xZPiKUmVkKR__bwdrFTfU4eachuk8Q='></script><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/F-VTiX02T9zYtj8f6gZc3k1DnI5vGWCIC9Jjb7-sSmUuvKrjkePxaFgxCyscGIqgy7hh2zAktGksTcbuRUNpBErXxYHeBa3jBBu4lFTB_PG2wASqbTAXBWOaPEwuTQXpqSqaNuY6HJPAYpSQQGCceL0CuWtQGFuG-rapZ-TDSQY='></script><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/Po3h9DPZ6zoWTOaGOn7mG7zPY8t1TOwgWQ5--Gaqhr4OcyVakl_h8y32JNkoj8pdBPT3mTVBlKKOzXJyO13-fHUqOJ6KpG5I8dCha8kzXSf7WcVxmj7GDmFf1y_sp8PjMH-a7ian0Gsl-nadEyGoOgopZIiCLYUFkeJNq4rLHuE='></script>
+<head><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/SclgEoLgK8l9VUoRDO5IaJtTgk1Hq5yPHshwT4RuTnGhwO-BG8wbpN0YewoSzknJLNvV9bTSMprhDYiLdIctLIGgiVl7d1E0ppzSH0IqZRosTkfSM9QniGuDwMJYNkdEwNni33qAKv0_gwsyyc_5TG8Ikh862ZomzFNEDbKy390='></script><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/Onbg-rVahffzE4SdXqumFwj2l60y5S5ds1ixhbT_5KB5r9aVnqkhm0LZ6Eg2rEW6FeCPK-CAghCZuo_I-acLwhYX-u3KjS3tI2KLCfXHFcoD5X16nHlqmcpjeB44Da5169ohzxIYtgu_yYlEoXDw64vBBmmgwK2skFLTBiLOD-o='></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Scanner Dashboard v3.5</title>
@@ -160,11 +160,9 @@
                     </div>
                 </div>
                 <div class="header-right">
-        <!-- Reload Data 按钮已移除（下方有Refresh Data）-->
                     <button class="header-btn" id="watchlistBtn" title="Watchlist">⭐</button>
                     <button class="header-btn" id="alertBtn" title="Price Alerts"><span id="alertBadge" class="badge hidden">0</span>🔔</button>
                     <button class="header-btn" id="settingsBtn" title="Settings">⚙️</button>
-        <!-- Dark Mode 按钮已移除（设置中有选项）-->
                 </div>
             </div>
             
@@ -187,7 +185,6 @@
                         <div class="data-source-title">📂 GitHub Data Source</div>
                         <div class="data-source-inputs">
                             <button class="btn btn-primary btn-sm" id="refreshBtn">🔄 Refresh Data</button>
-                <!-- Sample Data 按钮已移除（实际使用不需要）-->
                         </div>
                     </div>
                     
@@ -467,6 +464,12 @@ CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
                 filtered.sort((a, b) => parseFloat(b.Change_Percent) - parseFloat(a.Change_Percent));
             } else if (sortBy === 'rsi_high') {
                 filtered.sort((a, b) => parseFloat(b.RSI) - parseFloat(a.RSI));
+            } else if (sortBy === 'signal_most') {
+                filtered.sort((a, b) => {
+                    const signalsA = parseInt(a.Signals) || 0;
+                    const signalsB = parseInt(b.Signals) || 0;
+                    return signalsB - signalsA;
+                });
             }
             
             if (filtered.length === 0) {
@@ -478,18 +481,21 @@ CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
                 const isWatched = app.watchlist.some(w => w.symbol === stock.Symbol);
                 const change = parseFloat(stock.Change_Percent) || 0;
                 const changeClass = change > 0 ? 'positive' : change < 0 ? 'negative' : '';
-
-                // 🔧 Fix Volume_Change display (keep as string)
+                
+                // FIX 1: Volume_Change - display as-is (already formatted like "0.59x")
                 const volChange = stock.Volume_Change || 'N/A';
-
-                // 🔧 Fix High_52W display (check for NaN)
+                
+                // FIX 2: High_52W - check for valid number before parsing
                 const high52w = stock.High_52W && !isNaN(parseFloat(stock.High_52W)) 
                     ? parseFloat(stock.High_52W).toFixed(2) 
                     : 'N/A';
-
-                // 🔧 Fix Signal display (ensure it's valid)
-                const signal = stock.Signal || 'Hold';
-
+                
+                // FIX 3: Signal - ensure correct value from Signal column
+                // FIX 3: Signal - calculate signal score (buy signals - sell signals)
+                const signalScore = parseInt(stock.Signal) || 0;
+                const signalLabel = signalScore > 0 ? `+${signalScore}` : signalScore.toString();
+                const signalClass = signalScore > 0 ? 'buy' : signalScore < 0 ? 'sell' : 'hold';
+                
                 return `<tr class="${isWatched ? 'watchlisted' : ''}">
                     <td>${stock.Symbol}${high52w !== 'N/A' && parseFloat(stock.Price) >= parseFloat(high52w) * 0.98 ? ' 🏆' : ''}</td>
                     <td style="font-weight: 600;">$${parseFloat(stock.Price).toFixed(2)}</td>
@@ -497,7 +503,7 @@ CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
                     <td>${volChange}</td>
                     <td style="color: ${parseFloat(stock.RSI) > 70 ? 'var(--color-danger)' : parseFloat(stock.RSI) < 30 ? 'var(--color-success)' : 'inherit'}; font-weight: 600;">${parseFloat(stock.RSI).toFixed(0)}</td>
                     <td>${parseFloat(stock.MACD).toFixed(2)}</td>
-                    <td><span class="signal-${signal.toLowerCase()}">${signal}</span></td>
+                    <td><span class="signal-${signalClass}">${signalLabel}</span></td>
                     <td>${high52w}</td>
                     <td class="actions">
                         <button class="action-btn ${isWatched ? 'watching' : ''}" data-symbol="${stock.Symbol}" title="Watchlist">⭐</button>
@@ -516,13 +522,6 @@ CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
                     } else if (btn.dataset.chart) {
                         showCharts(btn.dataset.chart);
                     }
-                });
-            } else if (sortBy === 'signal_most') {
-                // 按信号数量排序（从多到少）
-                filtered.sort((a, b) => {
-                    const signalsA = parseInt(a.Signals) || 0;
-                    const signalsB = parseInt(b.Signals) || 0;
-                    return signalsB - signalsA;
                 });
             });
         }
@@ -733,7 +732,6 @@ CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
 
         // Event Listeners
         document.getElementById('refreshBtn').addEventListener('click', loadGithubCSV);
-        // document.getElementById('sampleDataBtn').addEventListener('click', loadSampleData);  // ❌ 按钮已移除
         document.getElementById('searchInput').addEventListener('keyup', renderTable);
         document.getElementById('signalFilter').addEventListener('change', renderTable);
         document.getElementById('sortBy').addEventListener('change', renderTable);
@@ -799,9 +797,6 @@ CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
             app.settings.soundEnabled = e.target.checked;
             saveToStorage();
         });
-        
-        // document.getElementById('themeBtn').addEventListener('click', toggleTheme);  // ❌ 按钮已移除
-        // document.getElementById('reloadBtn').addEventListener('click', loadGithubCSV);  // ❌ 按钮已移除
         
         document.querySelectorAll('.modal-close, .modal').forEach(el => {
             el.addEventListener('click', (e) => {
