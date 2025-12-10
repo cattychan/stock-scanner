@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/Po3h9DPZ6zoWTOaGOn7mG7zPY8t1TOwgWQ5--Gaqhr4OcyVakl_h8y32JNkoj8pdBPT3mTVBlKKOzXJyO13-fHUqOJ6KpG5I8dCha8kzXSf7WcVxmj7GDmFf1y_sp8PjMH-a7ian0Gsl-nadEyGoOgopZIiCLYUFkeJNq4rLHuE='></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Scanner Dashboard v3.5</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        :root {
+            --color-primary: #2196F3;
+            --color-success: #4CAF50;
+            --color-danger: #F44336;
+            --color-warning: #FF9800;
+            --color-info: #00BCD4;
+            --bg-primary: #ffffff;
+            --bg-secondary: #f9fafb;
+            --text-primary: #1f2937;
+            --text-secondary: #6b7280;
+            --border-color: #e5e7eb;
+        }
+        
+        [data-theme="dark"] {
+            --bg-primary: #1f2937;
+            --bg-secondary: #111827;
+            --text-primary: #f9fafb;
+            --text-secondary: #d1d5db;
+            --border-color: #374151;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg-primary); color: var(--text-primary); transition: all 0.3s; }
+        
+        .container-main { display: flex; width: 100%; height: 100vh; overflow: hidden; }
+        .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .header { background: var(--bg-primary); border-bottom: 1px solid var(--border-color); padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .header-left { display: flex; align-items: center; gap: 16px; }
+        .header-title { font-size: 24px; font-weight: 700; background: linear-gradient(135deg, #2196F3 0%, #00BCD4 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .header-subtitle { font-size: 12px; color: var(--text-secondary); }
+        .header-right { display: flex; gap: 8px; align-items: center; }
+        .header-btn { width: 40px; height: 40px; border: none; background: var(--bg-secondary); border-radius: 8px; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: all 0.3s; position: relative; }
+        .header-btn:hover { background: var(--border-color); transform: translateY(-2px); }
+        .badge { position: absolute; top: -5px; right: -5px; background: var(--color-danger); color: white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; }
+        .badge.pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        
+        .content { flex: 1; overflow-y: auto; padding: 24px; }
+        .tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid var(--border-color); }
+        .tab-btn { padding: 12px 16px; background: none; border: none; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--text-secondary); border-bottom: 3px solid transparent; transition: all 0.3s; margin-bottom: -1px; }
+        .tab-btn.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        .data-source { background: var(--bg-secondary); padding: 16px; border-radius: 12px; margin-bottom: 24px; border: 1px solid var(--border-color); }
+        .data-source-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary); }
+        .data-source-inputs { display: flex; gap: 8px; flex-wrap: wrap; }
+        .input-group { flex: 1; min-width: 200px; display: flex; gap: 8px; }
+        input[type="text"], input[type="number"] { flex: 1; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); font-size: 14px; transition: all 0.3s; }
+        input[type="text"]:focus, input[type="number"]:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1); }
+        
+        .btn { padding: 10px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.3s; display: inline-flex; align-items: center; gap: 6px; }
+        .btn-primary { background: var(--color-primary); color: white; }
+        .btn-primary:hover { background: #1565C0; transform: translateY(-2px); box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
+        .btn-secondary { background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); }
+        .btn-secondary:hover { background: var(--border-color); }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .btn-danger { background: var(--color-danger); color: white; }
+        .btn-danger:hover { background: #d32f2f; }
+        .btn-success { background: var(--color-success); color: white; }
+        .btn-success:hover { background: #388e3c; }
+        
+        .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .metric-card { background: var(--bg-secondary); padding: 16px; border-radius: 12px; border: 1px solid var(--border-color); transition: all 0.3s; }
+        .metric-card:hover { border-color: var(--color-primary); box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
+        .metric-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; font-weight: 600; text-transform: uppercase; }
+        .metric-value { font-size: 28px; font-weight: 700; color: var(--text-primary); }
+        
+        .filters { background: var(--bg-secondary); padding: 16px; border-radius: 12px; margin-bottom: 24px; border: 1px solid var(--border-color); }
+        .filters-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+        .filters-toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+        .filter-btn { padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.3s; }
+        .filter-btn:hover { border-color: var(--color-primary); background: var(--bg-secondary); }
+        .filter-btn.active { background: var(--color-primary); color: white; border-color: var(--color-primary); }
+        select { padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); font-size: 14px; cursor: pointer; }
+        
+        .table-container { background: var(--bg-secondary); border-radius: 12px; border: 1px solid var(--border-color); overflow: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { background: var(--bg-primary); border-bottom: 1px solid var(--border-color); padding: 12px; text-align: left; font-weight: 600; color: var(--text-primary); position: sticky; top: 0; }
+        td { padding: 12px; border-bottom: 1px solid var(--border-color); }
+        tbody tr:hover { background: var(--bg-primary); }
+        tbody tr.watchlisted { background: rgba(255, 193, 7, 0.05); }
+        
+        .positive { color: var(--color-success); font-weight: 600; }
+        .negative { color: var(--color-danger); font-weight: 600; }
+        .signal-buy { background: rgba(76, 175, 80, 0.1); color: var(--color-success); padding: 4px 8px; border-radius: 4px; font-weight: 600; }
+        .signal-sell { background: rgba(244, 67, 54, 0.1); color: var(--color-danger); padding: 4px 8px; border-radius: 4px; font-weight: 600; }
+        .signal-hold { background: rgba(158, 158, 158, 0.1); color: var(--text-secondary); padding: 4px 8px; border-radius: 4px; font-weight: 600; }
+        
+        .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .action-btn { width: 32px; height: 32px; border: 1px solid var(--border-color); background: var(--bg-secondary); border-radius: 6px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; transition: all 0.3s; }
+        .action-btn:hover { background: var(--color-primary); color: white; border-color: var(--color-primary); }
+        .action-btn.watching { background: var(--color-warning); border-color: var(--color-warning); color: white; }
+        
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); z-index: 1000; animation: fadeIn 0.3s; }
+        .modal.active { display: flex; align-items: center; justify-content: center; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .modal-content { background: var(--bg-primary); border-radius: 12px; padding: 24px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; }
+        .modal-title { font-size: 20px; font-weight: 700; }
+        .modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: var(--text-secondary); }
+        
+        .notification { position: fixed; bottom: 20px; right: 20px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; box-shadow: 0 10px 15px rgba(0,0,0,0.1); max-width: 400px; animation: slideInRight 0.3s; z-index: 2000; }
+        @keyframes slideInRight { from { transform: translateX(400px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .notification.success { border-left: 4px solid var(--color-success); }
+        .notification.error { border-left: 4px solid var(--color-danger); }
+        .notification.warning { border-left: 4px solid var(--color-warning); }
+        
+        .alert-banner { display: none; background: linear-gradient(135deg, var(--color-danger), var(--color-warning)); color: white; padding: 16px 24px; border-radius: 8px; margin-bottom: 16px; animation: slideDown 0.3s; }
+        .alert-banner.active { display: flex; justify-content: space-between; align-items: center; }
+        @keyframes slideDown { from { transform: translateY(-100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        
+        .charts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-top: 20px; }
+        .chart-card { background: var(--bg-secondary); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color); }
+        .chart-title { font-weight: 600; margin-bottom: 12px; font-size: 14px; color: var(--text-primary); }
+        .chart-container { position: relative; height: 250px; }
+        
+        .watchlist-item { background: var(--bg-primary); padding: 12px; border-radius: 8px; margin-bottom: 12px; border: 1px solid var(--border-color); }
+        .watchlist-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .watchlist-symbol { font-weight: 700; font-size: 16px; color: var(--text-primary); }
+        .watchlist-price { font-weight: 600; color: var(--text-primary); }
+        
+        .empty-state { text-align: center; padding: 40px 20px; color: var(--text-secondary); }
+        .empty-state-icon { font-size: 48px; margin-bottom: 16px; }
+        .empty-state-title { font-weight: 600; margin-bottom: 8px; color: var(--text-primary); }
+        
+        .hidden { display: none !important; }
+        .text-center { text-align: center; }
+        
+        @media (max-width: 768px) {
+            .header { flex-wrap: wrap; gap: 12px; }
+            .header-title { font-size: 18px; }
+            .data-source-inputs { flex-direction: column; }
+            .input-group { min-width: auto; }
+            .metrics { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+            .charts-grid { grid-template-columns: 1fr; }
+            .filters-toolbar { flex-direction: column; }
+            .filter-btn { flex: 1; width: 100%; }
+            table { font-size: 12px; }
+            th, td { padding: 8px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container-main">
+        <div class="main-content">
+            <div class="header">
+                <div class="header-left">
+                    <div>
+                        <div class="header-title">📈 Stock Scanner v3.5</div>
+                        <div class="header-subtitle" id="lastUpdated">Ready for data...</div>
+                    </div>
+                </div>
+                <div class="header-right">
+                    <button class="header-btn" id="reloadBtn" title="Reload Data">🔄</button>
+                    <button class="header-btn" id="watchlistBtn" title="Watchlist">⭐</button>
+                    <button class="header-btn" id="alertBtn" title="Price Alerts"><span id="alertBadge" class="badge hidden">0</span>🔔</button>
+                    <button class="header-btn" id="settingsBtn" title="Settings">⚙️</button>
+                    <button class="header-btn" id="themeBtn" title="Dark Mode">🌙</button>
+                </div>
+            </div>
+            
+            <div class="alert-banner" id="alertBanner">
+                <div>
+                    <div style="font-weight: 700; margin-bottom: 4px;">🔔 ALERT TRIGGERED!</div>
+                    <div id="alertBannerText">Price target reached</div>
+                </div>
+                <button class="modal-close" id="closeBannerBtn" style="color: white;">✕</button>
+            </div>
+            
+            <div class="content">
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="scanner">🔍 Scanner</button>
+                    <button class="tab-btn" data-tab="watchlist">⭐ Watchlist</button>
+                </div>
+                
+                <div id="scanner" class="tab-content active">
+                    <div class="data-source">
+                        <div class="data-source-title">📂 GitHub Data Source</div>
+                        <div class="data-source-inputs">
+                            <button class="btn btn-primary btn-sm" id="refreshBtn">🔄 Refresh Data</button>
+                            <button class="btn btn-secondary btn-sm" id="sampleDataBtn">📊 Sample Data</button>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric-card">
+                            <div class="metric-label">Total Stocks</div>
+                            <div class="metric-value" id="totalMetric">0</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Buy Signals</div>
+                            <div class="metric-value" style="color: var(--color-success);" id="buyMetric">0</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Sell Signals</div>
+                            <div class="metric-value" style="color: var(--color-danger);" id="sellMetric">0</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Hold Signals</div>
+                            <div class="metric-value" style="color: var(--text-secondary);" id="holdMetric">0</div>
+                        </div>
+                    </div>
+                    
+                    <div class="filters">
+                        <div class="filters-title">🔎 Filters</div>
+                        <div class="filters-toolbar">
+                            <input type="text" id="searchInput" placeholder="Search symbol..." style="flex: 1; min-width: 150px;">
+                            <select id="signalFilter">
+                                <option value="">All Signals</option>
+                                <option value="Buy">Buy</option>
+                                <option value="Sell">Sell</option>
+                                <option value="Hold">Hold</option>
+                            </select>
+                            <select id="sortBy">
+                                <option value="">Sort By</option>
+                                <option value="price_high">Price High</option>
+                                <option value="change_high">Change High</option>
+                                <option value="rsi_high">RSI High</option>
+                            </select>
+                            <button class="filter-btn" id="clearFiltersBtn">Clear</button>
+                        </div>
+                    </div>
+                    
+                    <div class="table-container">
+                        <table id="stockTable">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Price</th>
+                                    <th>Change %</th>
+                                    <th>Vol Δ %</th>
+                                    <th>RSI</th>
+                                    <th>MACD</th>
+                                    <th>Signal</th>
+                                    <th>52W High</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr><td colspan="9" class="text-center" style="padding: 40px 0; color: var(--text-secondary);">Load data to get started</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div id="watchlist" class="tab-content">
+                    <div id="watchlistView"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal" id="chartModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="chartModalTitle">Stock Charts</div>
+                <button class="modal-close" id="closeChartModal">✕</button>
+            </div>
+            <div class="charts-grid" id="chartsGrid"></div>
+        </div>
+    </div>
+    
+    <div class="modal" id="alertModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">🔔 Price Alerts</div>
+                <button class="modal-close" id="closeAlertModal">✕</button>
+            </div>
+            <div id="activeAlertsList" style="margin-bottom: 20px;"></div>
+            <button class="btn btn-primary" id="createAlertBtn" style="width: 100%;">+ Create New Alert</button>
+        </div>
+    </div>
+    
+    <div class="modal" id="createAlertModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">Create Price Alert</div>
+                <button class="modal-close" id="closeCreateAlertModal">✕</button>
+            </div>
+            <form id="alertForm">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 14px;">Stock Symbol *</label>
+                    <select id="alertSymbol" required>
+                        <option value="">Select a stock...</option>
+                    </select>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 14px;">Target Price *</label>
+                    <input type="number" id="alertPrice" placeholder="e.g., 150.00" step="0.01" min="0.01" required>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 6px; font-weight: 600; font-size: 14px;">Alert Type *</label>
+                    <div style="display: flex; gap: 12px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; flex: 1; padding: 12px; border: 1px solid var(--border-color); border-radius: 6px;">
+                            <input type="radio" name="alertType" value="above" required>
+                            <span>↑ Above Target</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; flex: 1; padding: 12px; border: 1px solid var(--border-color); border-radius: 6px;">
+                            <input type="radio" name="alertType" value="below" required>
+                            <span>↓ Below Target</span>
+                        </label>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+                    <button type="button" class="btn btn-secondary" id="cancelAlertBtn">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Alert</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">⚙️ Settings</div>
+                <button class="modal-close" id="closeSettingsModal">✕</button>
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="darkModeToggle" style="width: 18px; height: 18px; cursor: pointer;">
+                    Dark Mode
+                </label>
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                    <input type="checkbox" id="soundToggle" checked style="width: 18px; height: 18px; cursor: pointer;">
+                    Sound Alerts
+                </label>
+            </div>
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+                <button class="btn btn-primary" id="closeSettingsBtn">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const app = {
+            stocks: [],
+            watchlist: [],
+            alerts: [],
+            settings: { darkMode: false, soundEnabled: true }
+        };
+
+        const GITHUB_CSV_URL = 'https://raw.githubusercontent.com/cattychan/stock-scanner/main/stock_data/latest_scan.csv';
+
+        function loadFromStorage() {
+            const stored = localStorage.getItem('stockScannerApp');
+            if (stored) {
+                const data = JSON.parse(stored);
+                app.watchlist = data.watchlist || [];
+                app.alerts = data.alerts || [];
+                app.settings = { ...app.settings, ...data.settings };
+            }
+        }
+
+        function saveToStorage() {
+            localStorage.setItem('stockScannerApp', JSON.stringify({
+                watchlist: app.watchlist,
+                alerts: app.alerts,
+                settings: app.settings
+            }));
+        }
+
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.innerHTML = `<strong>${type.toUpperCase()}</strong><br>${message}`;
+            document.body.appendChild(notification);
+            setTimeout(() => notification.remove(), 3000);
+        }
+
+        function playAlertSound() {
+            if (!app.settings.soundEnabled) return;
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            oscillator.frequency.value = 800;
+            oscillator.type = 'sine';
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.2);
+        }
+
+        function parseCsvData(csvText) {
+            const lines = csvText.trim().split('\n');
+            const headers = lines[0].split(',').map(h => h.trim());
+            const data = [];
+            for (let i = 1; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+                const values = line.split(',').map(v => v.trim());
+                const row = {};
+                headers.forEach((header, index) => {
+                    row[header] = values[index] || '';
+                });
+                data.push(row);
+            }
+            return data;
+        }
+
+        async function loadGithubCSV() {
+            try {
+                const response = await fetch(GITHUB_CSV_URL);
+                if (!response.ok) throw new Error(`GitHub fetch failed: ${response.status}`);
+                const csvText = await response.text();
+                app.stocks = parseCsvData(csvText);
+                updateMetrics();
+                renderTable();
+                checkAlerts();
+                const timestamp = new Date().toLocaleTimeString();
+                document.getElementById('lastUpdated').textContent = `Last Updated: ${timestamp}`;
+                showNotification(`Loaded ${app.stocks.length} stocks from GitHub!`, 'success');
+            } catch (err) {
+                showNotification('GitHub Error: ' + err.message, 'error');
+            }
+        }
+
+        function loadSampleData() {
+            const sampleCsv = `Symbol,Price,Change_Percent,Volume,Volume_Change,RSI,MACD,Signal,MA_Cross,High_52W,Low_52W
+AAPL,175.50,2.30,52400000,150,68,0.52,Buy,Golden,199.62,124.17
+MSFT,428.75,1.85,21500000,120,72,0.38,Buy,Golden,467.00,290.36
+NVDA,879.45,-1.20,35800000,85,65,0.25,Hold,None,928.00,456.70
+TSLA,245.20,-3.50,98500000,220,42,-0.15,Sell,Death,299.29,139.02
+META,559.80,4.10,18900000,160,71,0.48,Buy,Golden,599.95,277.90
+AMZN,198.65,0.95,52100000,95,58,0.12,Hold,None,223.82,126.89
+GOOGL,177.89,2.15,22400000,130,66,0.33,Buy,None,151.94,101.70
+NFLX,291.35,-2.45,18700000,110,48,-0.08,Hold,None,320.50,156.89
+UBER,72.45,3.20,35600000,175,69,0.41,Buy,Golden,88.29,28.00
+CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
+            app.stocks = parseCsvData(sampleCsv);
+            updateMetrics();
+            renderTable();
+            checkAlerts();
+            showNotification(`Loaded ${app.stocks.length} sample stocks!`, 'success');
+        }
+
+        function renderTable() {
+            const tbody = document.querySelector('#stockTable tbody');
+            let filtered = [...app.stocks];
+            
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const signalFilter = document.getElementById('signalFilter').value;
+            
+            filtered = filtered.filter(stock => {
+                const matchSearch = !searchTerm || stock.Symbol.toLowerCase().includes(searchTerm);
+                const matchSignal = !signalFilter || stock.Signal === signalFilter;
+                return matchSearch && matchSignal;
+            });
+            
+            const sortBy = document.getElementById('sortBy').value;
+            if (sortBy === 'price_high') {
+                filtered.sort((a, b) => parseFloat(b.Price) - parseFloat(a.Price));
+            } else if (sortBy === 'change_high') {
+                filtered.sort((a, b) => parseFloat(b.Change_Percent) - parseFloat(a.Change_Percent));
+            } else if (sortBy === 'rsi_high') {
+                filtered.sort((a, b) => parseFloat(b.RSI) - parseFloat(a.RSI));
+            }
+            
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center" style="padding: 40px 0;">No stocks match your filters</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = filtered.map(stock => {
+                const isWatched = app.watchlist.some(w => w.symbol === stock.Symbol);
+                const change = parseFloat(stock.Change_Percent);
+                const changeClass = change > 0 ? 'positive' : change < 0 ? 'negative' : '';
+                return `<tr class="${isWatched ? 'watchlisted' : ''}">
+                    <td>${stock.Symbol}${parseFloat(stock.Price) >= parseFloat(stock.High_52W) * 0.98 ? ' 🏆' : ''}</td>
+                    <td style="font-weight: 600;">$${parseFloat(stock.Price).toFixed(2)}</td>
+                    <td class="${changeClass}">${change > 0 ? '+' : ''}${change.toFixed(2)}%</td>
+                    <td>${parseFloat(stock.Volume_Change).toFixed(0)}%</td>
+                    <td style="color: ${parseFloat(stock.RSI) > 70 ? 'var(--color-danger)' : parseFloat(stock.RSI) < 30 ? 'var(--color-success)' : 'inherit'}; font-weight: 600;">${parseFloat(stock.RSI).toFixed(0)}</td>
+                    <td>${parseFloat(stock.MACD).toFixed(2)}</td>
+                    <td><span class="signal-${stock.Signal.toLowerCase()}">${stock.Signal}</span></td>
+                    <td>${parseFloat(stock.High_52W).toFixed(2)}</td>
+                    <td class="actions">
+                        <button class="action-btn ${isWatched ? 'watching' : ''}" data-symbol="${stock.Symbol}" title="Watchlist">⭐</button>
+                        <button class="action-btn" data-alert="${stock.Symbol}" title="Alert">🔔</button>
+                        <button class="action-btn" data-chart="${stock.Symbol}" title="Charts">📊</button>
+                    </td>
+                </tr>`;
+            }).join('');
+            
+            tbody.querySelectorAll('.action-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    if (btn.dataset.symbol) {
+                        toggleWatchlist(btn.dataset.symbol);
+                    } else if (btn.dataset.alert) {
+                        createNewAlert(btn.dataset.alert);
+                    } else if (btn.dataset.chart) {
+                        showCharts(btn.dataset.chart);
+                    }
+                });
+            });
+        }
+
+        function toggleWatchlist(symbol) {
+            const stock = app.stocks.find(s => s.Symbol === symbol);
+            const index = app.watchlist.findIndex(w => w.symbol === symbol);
+            
+            if (index > -1) {
+                app.watchlist.splice(index, 1);
+                showNotification(`${symbol} removed from watchlist`, 'info');
+            } else {
+                app.watchlist.push({
+                    symbol: symbol,
+                    addedAt: new Date().toISOString(),
+                    addedPrice: parseFloat(stock.Price)
+                });
+                showNotification(`${symbol} added to watchlist ⭐`, 'success');
+                playAlertSound();
+            }
+            
+            saveToStorage();
+            renderTable();
+            updateWatchlistTab();
+        }
+
+        function updateWatchlistTab() {
+            const view = document.getElementById('watchlistView');
+            if (app.watchlist.length === 0) {
+                view.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⭐</div><div class="empty-state-title">No Watchlist Items</div></div>';
+                return;
+            }
+            
+            view.innerHTML = `<div class="table-container">
+                <table style="margin-top: 16px;">
+                    <thead><tr><th>Symbol</th><th>Current</th><th>Added</th><th>Gain/Loss</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        ${app.watchlist.map(item => {
+                            const stock = app.stocks.find(s => s.Symbol === item.symbol);
+                            if (!stock) return '';
+                            const gain = parseFloat(stock.Price) - item.addedPrice;
+                            const gainPercent = (gain / item.addedPrice) * 100;
+                            const gainClass = gain >= 0 ? 'positive' : 'negative';
+                            return `<tr>
+                                <td style="font-weight: 600;">${item.symbol}</td>
+                                <td>$${parseFloat(stock.Price).toFixed(2)}</td>
+                                <td>$${item.addedPrice.toFixed(2)}</td>
+                                <td class="${gainClass}">${gainPercent >= 0 ? '+' : ''}${gainPercent.toFixed(2)}%</td>
+                                <td><button class="btn btn-sm btn-danger" onclick="removeWatchlist('${item.symbol}')">Remove</button></td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>`;
+        }
+
+        function removeWatchlist(symbol) {
+            app.watchlist = app.watchlist.filter(w => w.symbol !== symbol);
+            saveToStorage();
+            renderTable();
+            updateWatchlistTab();
+        }
+
+        function createNewAlert(symbol = '') {
+            const modal = document.getElementById('createAlertModal');
+            const symbolSelect = document.getElementById('alertSymbol');
+            if (symbol) symbolSelect.value = symbol;
+            document.getElementById('alertForm').reset();
+            modal.classList.add('active');
+        }
+
+        function checkAlerts() {
+            app.alerts.forEach(alert => {
+                if (alert.status !== 'active') return;
+                const stock = app.stocks.find(s => s.Symbol === alert.symbol);
+                if (!stock) return;
+                
+                const currentPrice = parseFloat(stock.Price);
+                const shouldTrigger = (alert.direction === 'above' && currentPrice >= alert.targetPrice) ||
+                                    (alert.direction === 'below' && currentPrice <= alert.targetPrice);
+                
+                if (shouldTrigger && !alert.notificationSent) {
+                    alert.status = 'triggered';
+                    alert.notificationSent = true;
+                    saveToStorage();
+                    
+                    const banner = document.getElementById('alertBanner');
+                    document.getElementById('alertBannerText').textContent = `${stock.Symbol} reached $${currentPrice.toFixed(2)} (Target: $${alert.targetPrice.toFixed(2)})`;
+                    banner.classList.add('active');
+                    playAlertSound();
+                    showNotification(`🔔 ${stock.Symbol} reached target price!`, 'warning');
+                }
+            });
+        }
+
+        function showCharts(symbol) {
+            const stock = app.stocks.find(s => s.Symbol === symbol);
+            if (!stock) return;
+            
+            document.getElementById('chartModalTitle').textContent = `${symbol} - Analysis`;
+            const grid = document.getElementById('chartsGrid');
+            grid.innerHTML = `
+                <div class="chart-card">
+                    <div class="chart-title">RSI Indicator</div>
+                    <div class="chart-container"><canvas id="rsiChart"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">MACD</div>
+                    <div class="chart-container"><canvas id="macdChart"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">52W Range</div>
+                    <div class="chart-container"><canvas id="rangeChart"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-title">Volume</div>
+                    <div class="chart-container"><canvas id="volumeChart"></canvas></div>
+                </div>
+            `;
+            
+            document.getElementById('chartModal').classList.add('active');
+            
+            setTimeout(() => {
+                const rsi = parseFloat(stock.RSI);
+                const macd = parseFloat(stock.MACD);
+                const volumeChange = parseFloat(stock.Volume_Change);
+                
+                new Chart(document.getElementById('rsiChart'), {
+                    type: 'line',
+                    data: {
+                        labels: ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'D10'],
+                        datasets: [{
+                            label: 'RSI',
+                            data: [rsi-5, rsi-3, rsi-1, rsi, rsi+2, rsi-1, rsi+3, rsi+1, rsi, rsi+2].map(v => Math.max(0, Math.min(100, v))),
+                            borderColor: '#2196F3',
+                            backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                });
+                
+                new Chart(document.getElementById('macdChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'D10'],
+                        datasets: [{
+                            label: 'MACD',
+                            data: [macd-0.3, macd-0.2, macd-0.1, macd, macd+0.2, macd+0.1, macd+0.3, macd+0.2, macd+0.1, macd+0.15],
+                            backgroundColor: (ctx) => ctx.parsed.y >= 0 ? 'rgba(76, 175, 80, 0.6)' : 'rgba(244, 67, 54, 0.6)'
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                });
+                
+                new Chart(document.getElementById('rangeChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: ['52W Range'],
+                        datasets: [{
+                            label: 'Low',
+                            data: [parseFloat(stock.Low_52W)],
+                            backgroundColor: 'rgba(244, 67, 54, 0.6)'
+                        }, {
+                            label: 'Current',
+                            data: [parseFloat(stock.Price)],
+                            backgroundColor: 'rgba(33, 150, 243, 0.6)'
+                        }, {
+                            label: 'High',
+                            data: [parseFloat(stock.High_52W)],
+                            backgroundColor: 'rgba(76, 175, 80, 0.6)'
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: false } } }
+                });
+                
+                new Chart(document.getElementById('volumeChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'D10'],
+                        datasets: [{
+                            label: 'Volume',
+                            data: [volumeChange*0.8, volumeChange*0.85, volumeChange*0.9, volumeChange*0.95, volumeChange, volumeChange*0.92, volumeChange*1.05, volumeChange*0.98, volumeChange*1.02, volumeChange*1.1],
+                            backgroundColor: 'rgba(76, 175, 80, 0.6)'
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                });
+            }, 100);
+        }
+
+        function updateMetrics() {
+            document.getElementById('totalMetric').textContent = app.stocks.length;
+            document.getElementById('buyMetric').textContent = app.stocks.filter(s => s.Signal === 'Buy').length;
+            document.getElementById('sellMetric').textContent = app.stocks.filter(s => s.Signal === 'Sell').length;
+            document.getElementById('holdMetric').textContent = app.stocks.filter(s => s.Signal === 'Hold').length;
+            document.getElementById('lastUpdated').textContent = `Last Updated: ${new Date().toLocaleTimeString()}`;
+        }
+
+        function toggleTheme() {
+            const html = document.documentElement;
+            const isDark = html.getAttribute('data-theme') === 'dark';
+            html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+            app.settings.darkMode = !isDark;
+            saveToStorage();
+        }
+
+        // Event Listeners
+        document.getElementById('refreshBtn').addEventListener('click', loadGithubCSV);
+        document.getElementById('sampleDataBtn').addEventListener('click', loadSampleData);
+        document.getElementById('searchInput').addEventListener('keyup', renderTable);
+        document.getElementById('signalFilter').addEventListener('change', renderTable);
+        document.getElementById('sortBy').addEventListener('change', renderTable);
+        document.getElementById('clearFiltersBtn').addEventListener('click', () => {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('signalFilter').value = '';
+            document.getElementById('sortBy').value = '';
+            renderTable();
+        });
+        
+        document.getElementById('watchlistBtn').addEventListener('click', () => {
+            document.getElementById('watchlist').classList.add('active');
+            document.getElementById('scanner').classList.remove('active');
+            document.querySelectorAll('.tab-btn')[0].classList.remove('active');
+            document.querySelectorAll('.tab-btn')[1].classList.add('active');
+            updateWatchlistTab();
+        });
+        
+        document.getElementById('alertBtn').addEventListener('click', () => {
+            document.getElementById('alertModal').classList.add('active');
+            document.getElementById('alertSymbol').innerHTML = '<option value="">Select...</option>' + app.stocks.map(s => `<option value="${s.Symbol}">${s.Symbol}</option>`).join('');
+        });
+        
+        document.getElementById('createAlertBtn').addEventListener('click', () => {
+            document.getElementById('alertModal').classList.remove('active');
+            createNewAlert();
+        });
+        
+        document.getElementById('alertForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const symbol = document.getElementById('alertSymbol').value;
+            const price = parseFloat(document.getElementById('alertPrice').value);
+            const direction = document.querySelector('input[name="alertType"]:checked').value;
+            
+            if (!symbol) {
+                showNotification('Select a symbol', 'error');
+                return;
+            }
+            
+            app.alerts.push({
+                id: 'alert_' + Date.now(),
+                symbol: symbol,
+                targetPrice: price,
+                direction: direction,
+                status: 'active',
+                notificationSent: false
+            });
+            
+            saveToStorage();
+            document.getElementById('createAlertModal').classList.remove('active');
+            showNotification(`Alert set for ${symbol} at $${price.toFixed(2)}`, 'success');
+            playAlertSound();
+        });
+        
+        document.getElementById('settingsBtn').addEventListener('click', () => {
+            document.getElementById('settingsModal').classList.add('active');
+            document.getElementById('darkModeToggle').checked = app.settings.darkMode;
+            document.getElementById('soundToggle').checked = app.settings.soundEnabled;
+        });
+        
+        document.getElementById('darkModeToggle').addEventListener('change', toggleTheme);
+        document.getElementById('soundToggle').addEventListener('change', (e) => {
+            app.settings.soundEnabled = e.target.checked;
+            saveToStorage();
+        });
+        
+        document.getElementById('themeBtn').addEventListener('click', toggleTheme);
+        document.getElementById('reloadBtn').addEventListener('click', loadGithubCSV);
+        
+        document.querySelectorAll('.modal-close, .modal').forEach(el => {
+            el.addEventListener('click', (e) => {
+                if (e.target === el || e.target.classList.contains('modal-close')) {
+                    e.target.closest('.modal').classList.remove('active');
+                }
+            });
+        });
+        
+        document.getElementById('closeChartModal').addEventListener('click', () => document.getElementById('chartModal').classList.remove('active'));
+        document.getElementById('closeAlertModal').addEventListener('click', () => document.getElementById('alertModal').classList.remove('active'));
+        document.getElementById('closeCreateAlertModal').addEventListener('click', () => document.getElementById('createAlertModal').classList.remove('active'));
+        document.getElementById('closeSettingsModal').addEventListener('click', () => document.getElementById('settingsModal').classList.remove('active'));
+        document.getElementById('cancelAlertBtn').addEventListener('click', () => document.getElementById('createAlertModal').classList.remove('active'));
+        document.getElementById('closeBannerBtn').addEventListener('click', () => document.getElementById('alertBanner').classList.remove('active'));
+        document.getElementById('closeSettingsBtn').addEventListener('click', () => document.getElementById('settingsModal').classList.remove('active'));
+        
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.tab).classList.add('active');
+            });
+        });
+        
+        window.addEventListener('load', () => {
+            loadFromStorage();
+            if (app.settings.darkMode) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+            loadGithubCSV();
+        });
+    </script>
+</body>
+</html>
