@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 """
 股票掃描器 - 專業版 v2.1
 - 修正 Google Sheets 格式問題
@@ -9,6 +8,7 @@
 - 波動率篩選
 - 流動性篩選
 - 100+ 支股票
+- 新增：HTML Dashboard 支援
 """
 
 import yfinance as yf
@@ -27,49 +27,41 @@ warnings.filterwarnings('ignore')
 OUTPUT_FOLDER = "stock_data"
 
 # ========== 配置參數 ==========
-MIN_SIGNALS = 3  # 至少 3 個信號
-MAX_VOLATILITY = 60  # 最大年化波動率 60%
+MIN_SIGNALS = 3          # 至少 3 個信號
+MAX_VOLATILITY = 60      # 最大年化波動率 60%
 MIN_AVG_VOLUME = 500000  # 最小平均成交量 50萬股
-MIN_PRICE = 5.0  # 最低股價 $5
-MAX_RISK_SCORE = 70  # 最大風險分數 70
+MIN_PRICE = 5.0          # 最低股價 $5
+MAX_RISK_SCORE = 70      # 最大風險分數 70
 
 # ========== 100+ 支美股清單 ==========
 SCAN_TICKERS = [
     # 科技巨頭
     "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "META", "TSLA", "AVGO", "ORCL",
-    
     # 半導體
     "AMD", "INTC", "QCOM", "TXN", "ADI", "MRVL", "MU", "AMAT", "LRCX", "KLAC",
     "ASML", "SNPS", "CDNS", "MCHP", "ON", "NXPI", "MPWR", "SWKS",
-    
     # 軟體 & 雲端
     "CRM", "ADBE", "NOW", "INTU", "WDAY", "PANW", "CRWD", "ZS", "DDOG", "NET",
     "SNOW", "PLTR", "U", "DOCU", "TWLO", "ZM", "OKTA", "MDB",
-    
     # 電商 & 消費
     "SHOP", "MELI", "BKNG", "ABNB", "DASH", "UBER", "LYFT", "ETSY", "W", "CHWY",
-    
     # 金融
     "JPM", "BAC", "WFC", "GS", "MS", "C", "BLK", "SCHW", "AXP", "V", "MA", "PYPL",
     "SQ", "COIN", "SOFI",
-    
     # 醫療保健
     "JNJ", "UNH", "LLY", "ABBV", "MRK", "TMO", "ABT", "DHR", "PFE", "AMGN",
     "GILD", "VRTX", "REGN", "BMY", "CVS",
-    
     # 工業
     "BA", "CAT", "GE", "HON", "UPS", "RTX", "LMT", "DE", "MMM", "UNP",
-    
     # 能源
     "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HAL",
-    
     # 消費品
     "PG", "KO", "PEP", "COST", "WMT", "HD", "LOW", "NKE", "SBUX", "MCD",
     "TGT", "DIS", "NFLX", "CMCSA",
-    
     # 其他重要股票
     "IBM", "CSCO", "ADSK", "ADP", "PAYX", "ROP", "ICE", "CME", "SPGI", "MCO"
 ]
+
 
 def calculate_risk_score(data, last_close, current_rsi, current_macd, bb_width, volatility):
     """
@@ -146,18 +138,19 @@ def calculate_risk_score(data, last_close, current_rsi, current_macd, bb_width, 
     
     return min(risk_score, 100)
 
+
 def calculate_volatility(data):
     """計算年化波動率 (%)"""
     returns = data['Close'].pct_change().dropna()
     volatility = returns.std() * np.sqrt(252) * 100
     return float(volatility)
 
+
 def scan_single_stock(ticker):
     """掃描單支股票 - 專業版"""
     try:
         # 下載數據
         data = yf.download(ticker, period="3mo", progress=False, auto_adjust=True)
-        
         if data.empty or len(data) < 50:
             return None
         
@@ -169,18 +162,18 @@ def scan_single_stock(ticker):
         
         # ===== 流動性篩選 =====
         if avg_volume_20 < MIN_AVG_VOLUME:
-            print(f"⏭️ 流動性不足")
+            print(f"⏭️  流動性不足")
             return None
         
         # ===== 價格篩選 =====
         if last_close < MIN_PRICE:
-            print(f"⏭️ 價格過低")
+            print(f"⏭️  價格過低")
             return None
         
         # ===== 計算波動率 =====
         volatility = calculate_volatility(data)
         if volatility > MAX_VOLATILITY:
-            print(f"⏭️ 波動率過高")
+            print(f"⏭️  波動率過高")
             return None
         
         # ===== 技術指標計算 =====
@@ -242,7 +235,7 @@ def scan_single_stock(ticker):
         
         # ===== 風險篩選 =====
         if risk_score > MAX_RISK_SCORE:
-            print(f"⏭️ 風險過高 ({risk_score})")
+            print(f"⏭️  風險過高 ({risk_score})")
             return None
         
         # ===== 生成交易信號 =====
@@ -297,7 +290,7 @@ def scan_single_stock(ticker):
             risk_label = "低風險" if risk_score < 40 else "中風險" if risk_score < 60 else "偏高風險"
             print(f"✓ {len(signals)} 信號 | 風險: {risk_score} ({risk_label})")
         else:
-            print(f"⏭️ {len(signals)} 信號")
+            print(f"⏭️  {len(signals)} 信號")
             return None
         
         # 篩選並返回
@@ -323,11 +316,13 @@ def scan_single_stock(ticker):
                 'Signal_List': ", ".join(signals),
                 'Scan_Time': datetime.now().strftime('%Y-%m-%d %H:%M')
             }
+        
         return None
         
     except Exception as e:
         print(f"❌ {str(e)[:40]}")
         return None
+
 
 def upload_to_google_sheets(results):
     """上傳到 Google Sheets - 修正版"""
@@ -336,12 +331,12 @@ def upload_to_google_sheets(results):
         sheet_id = os.environ.get('GOOGLE_SHEET_ID')
         
         if not creds_json or not sheet_id:
-            print("⚠️ 缺少憑證")
+            print("⚠️  缺少憑證")
             return False
         
         creds_dict = json.loads(creds_json)
         scope = ['https://spreadsheets.google.com/feeds',
-                 'https://www.googleapis.com/auth/drive']
+                'https://www.googleapis.com/auth/drive']
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         
@@ -362,6 +357,7 @@ def upload_to_google_sheets(results):
     except Exception as e:
         print(f"❌ 上傳失敗：{str(e)[:40]}")
         return False
+
 
 def main():
     print("\n" + "="*80)
@@ -393,17 +389,38 @@ def main():
         results.sort(key=lambda x: (x['Risk_Score'], -x['Signals']))
         
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        output_file = os.path.join(OUTPUT_FOLDER, f"results_{timestamp}.csv")
         
+        # 1️⃣ 保存原始格式 CSV（給 Google Sheets 和 Perplexity 用）
+        output_file = os.path.join(OUTPUT_FOLDER, f"results_{timestamp}.csv")
         with open(output_file, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.DictWriter(f, fieldnames=list(results[0].keys()))
             writer.writeheader()
             writer.writerows(results)
         
-        print(f"✅ CSV: {output_file}")
+        print(f"✅ CSV 保存: {output_file}")
         
+        # 2️⃣ 創建 HTML Dashboard 專用版本（重命名列）
+        df_html = pd.DataFrame(results)
+        df_html = df_html.rename(columns={
+            'Ticker': 'Symbol',
+            'Change_%': 'Change_Percent',
+            'Signal_List': 'Signal',
+            '52W_High': 'High_52W',
+            '52W_Low': 'Low_52W',
+            'Vol_Ratio': 'Volume_Change',
+            'Volatility_%': 'Volatility',
+            'BB_Width_%': 'BB_Width'
+        })
+        
+        # 保存為 latest_scan.csv（給 HTML Dashboard 用）
+        html_csv_path = os.path.join(OUTPUT_FOLDER, 'latest_scan.csv')
+        df_html.to_csv(html_csv_path, index=False, encoding='utf-8-sig')
+        print(f"✅ HTML 版本保存: {html_csv_path}")
+        
+        # 3️⃣ 上傳到 Google Sheets（使用原始格式）
         upload_to_google_sheets(results)
         
+        # 顯示 TOP 10
         print(f"\n📊 TOP 10 最佳機會（按風險分數排序）:\n")
         print(f"{'排名':<4} {'代碼':<6} {'價格':<10} {'風險':<6} {'波動':<7} {'RSI':<6} {'信號':<4} {'信號列表':<50}")
         print("-" * 100)
@@ -417,9 +434,10 @@ def main():
         print(f"📈 平均風險分數: {sum(r['Risk_Score'] for r in results) / len(results):.1f}")
         print(f"📊 平均波動率: {sum(r['Volatility_%'] for r in results) / len(results):.1f}%")
     else:
-        print("⚠️ 沒有符合條件的股票")
+        print("⚠️  沒有符合條件的股票")
     
     print(f"{'='*80}\n")
+
 
 if __name__ == "__main__":
     main()
