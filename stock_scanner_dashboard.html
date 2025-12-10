@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/ha0t8OUNRN9KdrLttBXgvPebKj2qPbcx4ruWvfhHPFQS-m1daPOm7IkXhRq3UFsMOVGUt80JegwRJ8LYNl-wNdcU-HkZ42F2oYbgPcn-UYLVS6mrLs5PcU4MiqRY_tUxt-UuXV6--hYeSGn72hg8_mTcAYXi2bfNhtk5SS6xQCM='></script><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/F-VTiX02T9zYtj8f6gZc3k1DnI5vGWCIC9Jjb7-sSmUuvKrjkePxaFgxCyscGIqgy7hh2zAktGksTcbuRUNpBErXxYHeBa3jBBu4lFTB_PG2wASqbTAXBWOaPEwuTQXpqSqaNuY6HJPAYpSQQGCceL0CuWtQGFuG-rapZ-TDSQY='></script><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/Po3h9DPZ6zoWTOaGOn7mG7zPY8t1TOwgWQ5--Gaqhr4OcyVakl_h8y32JNkoj8pdBPT3mTVBlKKOzXJyO13-fHUqOJ6KpG5I8dCha8kzXSf7WcVxmj7GDmFf1y_sp8PjMH-a7ian0Gsl-nadEyGoOgopZIiCLYUFkeJNq4rLHuE='></script>
+<head><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/JBasBPyit_idTCw4K6D8q-YZOiizFxZ8rVhdt3zCaS7tCX-fmbR0KbpvcL0kmXpQZzfJTIVK_hQ32DJPJRh1BAx96hK55MM5fMhfIn1h_R3zjSfOoDKx_JB8b3DhnkmwkHWN6kUe-_bHsSOEf0UkZk3YPhDQ4NlTXTI8BNnqQZQ='></script><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/F-VTiX02T9zYtj8f6gZc3k1DnI5vGWCIC9Jjb7-sSmUuvKrjkePxaFgxCyscGIqgy7hh2zAktGksTcbuRUNpBErXxYHeBa3jBBu4lFTB_PG2wASqbTAXBWOaPEwuTQXpqSqaNuY6HJPAYpSQQGCceL0CuWtQGFuG-rapZ-TDSQY='></script><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/Po3h9DPZ6zoWTOaGOn7mG7zPY8t1TOwgWQ5--Gaqhr4OcyVakl_h8y32JNkoj8pdBPT3mTVBlKKOzXJyO13-fHUqOJ6KpG5I8dCha8kzXSf7WcVxmj7GDmFf1y_sp8PjMH-a7ian0Gsl-nadEyGoOgopZIiCLYUFkeJNq4rLHuE='></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Scanner Dashboard v3.5</title>
@@ -160,11 +160,11 @@
                     </div>
                 </div>
                 <div class="header-right">
-
+        <!-- 已移除：Reload Data 按鈕（下方已有 Refresh Data）-->
                     <button class="header-btn" id="watchlistBtn" title="Watchlist">⭐</button>
                     <button class="header-btn" id="alertBtn" title="Price Alerts"><span id="alertBadge" class="badge hidden">0</span>🔔</button>
                     <button class="header-btn" id="settingsBtn" title="Settings">⚙️</button>
-
+        <!-- 已移除：Dark Mode 按鈕（設置中已有選項）-->
                 </div>
             </div>
             
@@ -187,7 +187,7 @@
                         <div class="data-source-title">📂 GitHub Data Source</div>
                         <div class="data-source-inputs">
                             <button class="btn btn-primary btn-sm" id="refreshBtn">🔄 Refresh Data</button>
-
+                <!-- 已移除：Sample Data 按鈕（實際使用不需要）-->
                         </div>
                     </div>
                     
@@ -468,13 +468,6 @@ CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
             } else if (sortBy === 'rsi_high') {
                 filtered.sort((a, b) => parseFloat(b.RSI) - parseFloat(a.RSI));
             }
-            } else if (sortBy === 'signal_most') {
-                // 按信號數量排序（從多到少）
-                filtered.sort((a, b) => {
-                    const signalsA = parseInt(a.Signals) || 0;
-                    const signalsB = parseInt(b.Signals) || 0;
-                    return signalsB - signalsA;
-                });
             
             if (filtered.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="9" class="text-center" style="padding: 40px 0;">No stocks match your filters</td></tr>';
@@ -523,6 +516,13 @@ CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
                     } else if (btn.dataset.chart) {
                         showCharts(btn.dataset.chart);
                     }
+                });
+            } else if (sortBy === 'signal_most') {
+                // 按信號數量排序（從多到少）
+                filtered.sort((a, b) => {
+                    const signalsA = parseInt(a.Signals) || 0;
+                    const signalsB = parseInt(b.Signals) || 0;
+                    return signalsB - signalsA;
                 });
             });
         }
@@ -733,7 +733,7 @@ CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
 
         // Event Listeners
         document.getElementById('refreshBtn').addEventListener('click', loadGithubCSV);
-        // document.getElementById('sampleDataBtn').addEventListener('click', loadSampleData);  // ❌ 已移除（按鈕已刪除）
+        // document.getElementById('sampleDataBtn').addEventListener('click', loadSampleData);  // ❌ 按鈕已移除
         document.getElementById('searchInput').addEventListener('keyup', renderTable);
         document.getElementById('signalFilter').addEventListener('change', renderTable);
         document.getElementById('sortBy').addEventListener('change', renderTable);
@@ -800,8 +800,8 @@ CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
             saveToStorage();
         });
         
-        // document.getElementById('themeBtn').addEventListener('click', toggleTheme);  // ❌ 已移除（按鈕已刪除）
-        // document.getElementById('reloadBtn').addEventListener('click', loadGithubCSV);  // ❌ 已移除（按鈕已刪除）
+        // document.getElementById('themeBtn').addEventListener('click', toggleTheme);  // ❌ 按鈕已移除
+        // document.getElementById('reloadBtn').addEventListener('click', loadGithubCSV);  // ❌ 按鈕已移除
         
         document.querySelectorAll('.modal-close, .modal').forEach(el => {
             el.addEventListener('click', (e) => {
