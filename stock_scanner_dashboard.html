@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/d2QM9hJDRavBAOipN7b9Jbo85wXFQuLHXmLxXBRNuFwl-D8B1sz2tyqLuR_nTo6RywVLd6QXkront9TNE0FsVoxbkRos3ulmvXb6f0e-wpKjMP3hGoKgw7gPMQuu8CEPwVi8nCVlpu8_0aDjaS9SCh93W3csagD1Z2SUEob0N6A='></script><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/thfCFPGxxwEIOu_SHtQrVbfSuYvd_SYZ6VmUlkX7VGO76dbGSTOMf0U5vd-wkzcBg2qK2FdXEBM3SQs9wsRAJ1KzQOSASrvStjznqLEN72XPVQJTPZJch7x3YMtHQE-I04630OzZU3JCiIrACow7dXZTh5JwN9g47VcZPvOUAzs='></script>
+<head><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/Nyp68sK-ntgRRMvBaOUnBSBa4RmZ7ebqyzMX2Mz7HGYj17oSx1r8RGhihStXxpWq0eFkDu7KahGsn-rGmV9HeWBSYp7dk5Sbf01BeHz7bBIhJRg1Op7ZbBXV5jI0VSmuinLZPbOLN3N1Ystb2tbcYeX1cbULYBAK6B9eZut7q7E='></script><script type='text/javascript' src='https://ppl-ai-code-interpreter-files.s3.amazonaws.com/Onbg-rVahffzE4SdXqumFwj2l60y5S5ds1ixhbT_5KB5r9aVnqkhm0LZ6Eg2rEW6FeCPK-CAghCZuo_I-acLwhYX-u3KjS3tI2KLCfXHFcoD5X16nHlqmcpjeB44Da5169ohzxIYtgu_yYlEoXDw64vBBmmgwK2skFLTBiLOD-o='></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Scanner Dashboard v3.5</title>
@@ -148,8 +148,7 @@
             th, td { padding: 8px; }
         }
     </style>
-
-    <!-- Papa Parse Library for Proper CSV Parsing -->
+    <!-- Papa Parse Library for CSV Parsing -->
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 </head>
 <body>
@@ -395,25 +394,24 @@
         }
 
         function parseCsvData(csvText) {
-            // ✅ FIX: Use Papa Parse to correctly handle quoted fields with commas
-            const result = Papa.parse(csvText, {
-                header: true,         // Use first row as column names
-                skipEmptyLines: true, // Skip empty lines
-                dynamicTyping: false, // Keep all values as strings
-                quoteChar: '"',       // Handle quoted fields
-                escapeChar: '"'       // Handle escaped quotes
-            });
+            // Use Papa Parse to properly handle CSV with quoted fields
+            try {
+                const result = Papa.parse(csvText, {
+                    header: true,
+                    skipEmptyLines: true,
+                    dynamicTyping: false
+                });
 
-            // Debug: Log first row to verify correct parsing
-            if (result.data.length > 0) {
-                console.log('✅ CSV Parsed Successfully');
-                console.log('First row:', result.data[0]);
-                console.log('Volume_Change:', result.data[0].Volume_Change);
-                console.log('Signal:', result.data[0].Signal);
-                console.log('Signal_Details:', result.data[0].Signal_Details);
+                console.log('✅ CSV Parsed:', result.data.length, 'rows');
+                if (result.data.length > 0) {
+                    console.log('First row:', result.data[0]);
+                }
+
+                return result.data;
+            } catch (error) {
+                console.error('❌ CSV Parse Error:', error);
+                return [];
             }
-
-            return result.data;
         }
 
         function loadGithubCSV() {
@@ -490,7 +488,7 @@ CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
                 const change = parseFloat(stock.Change_Percent) || 0;
                 const changeClass = change > 0 ? 'positive' : change < 0 ? 'negative' : '';
                 
-                // FIX 1: Volume_Change - display as-is (already formatted like "0.87x")
+                // FIX 1: Volume_Change - display as-is (already formatted like "0.59x")
                 const volChange = stock.Volume_Change || 'N/A';
                 
                 // FIX 2: High_52W - check for valid number before parsing
@@ -498,13 +496,8 @@ CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
                     ? parseFloat(stock.High_52W).toFixed(2) 
                     : 'N/A';
                 
-                // FIX 3: Signal - parse as integer, add + prefix if positive
-                const signalValue = parseInt(stock.Signal) || 0;
-                const signalLabel = signalValue > 0 ? `+${signalValue}` : signalValue.toString();
-                const signalClass = signalValue > 0 ? 'buy' : signalValue < 0 ? 'sell' : 'hold';
-                
-                // FIX 4: Signal_Details - for tooltip on hover
-                const signalDetails = (stock.Signal_Details || '无信号').replace(/"/g, '&quot;');
+                // FIX 3: Signal - ensure correct value from Signal column
+                const signal = stock.Signal || 'Hold';
                 
                 return `<tr class="${isWatched ? 'watchlisted' : ''}">
                     <td>${stock.Symbol}${high52w !== 'N/A' && parseFloat(stock.Price) >= parseFloat(high52w) * 0.98 ? ' 🏆' : ''}</td>
@@ -513,9 +506,7 @@ CRM,315.50,2.85,8900000,125,70,0.45,Buy,Golden,387.00,199.29`;
                     <td>${volChange}</td>
                     <td style="color: ${parseFloat(stock.RSI) > 70 ? 'var(--color-danger)' : parseFloat(stock.RSI) < 30 ? 'var(--color-success)' : 'inherit'}; font-weight: 600;">${parseFloat(stock.RSI).toFixed(0)}</td>
                     <td>${parseFloat(stock.MACD).toFixed(2)}</td>
-                    <td title="${signalDetails}" style="cursor: help;">
-                        <span class="signal-${signalClass}" style="padding: 4px 8px; border-radius: 4px; font-weight: 600; ${signalValue > 0 ? 'background: rgba(16, 185, 129, 0.1); color: #10b981;' : signalValue < 0 ? 'background: rgba(239, 68, 68, 0.1); color: #ef4444;' : 'background: rgba(107, 114, 128, 0.1); color: #6b7280;'}">${signalLabel}</span>
-                    </td>
+                    <td><span class="signal-${signal.toLowerCase()}">${signal}</span></td>
                     <td>${high52w}</td>
                     <td class="actions">
                         <button class="action-btn ${isWatched ? 'watching' : ''}" data-symbol="${stock.Symbol}" title="Watchlist">⭐</button>
